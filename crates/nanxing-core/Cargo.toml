@@ -1,0 +1,10 @@
+[package]
+name = "nanxing-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Direct STEP (ISO-10303-21) to Nanxing SCX engine"
+
+[dependencies]
+anyhow.workspace = true
+csv.workspace = true

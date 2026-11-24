@@ -1,0 +1,2049 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nanxing Studio 2.0 — STEP → SCX CAM</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-0: #0b0d11;
+      --bg-1: #11141a;
+      --bg-2: #161a22;
+      --bg-3: #1c222c;
+      --bg-hover: #222936;
+      --border: #242b36;
+      --border-hi: #323c4c;
+
+      --txt-0: #e6edf5;
+      --txt-1: #b4c2d1;
+      --txt-2: #7e8fa3;
+      --txt-3: #566578;
+
+      --accent: #18a4d0;
+      --accent-soft: rgba(24, 164, 208, 0.12);
+      --accent-line: rgba(24, 164, 208, 0.35);
+
+      --c-drill-v: #38bdf8;
+      --c-drill-h: #60a5fa;
+      --c-lamello: #f59e0b;
+      --c-groove: #34d399;
+      --c-mill-top: #c084fc;
+      --c-mill-bot: #e2e8f0;
+      --c-edge: #e16b78;
+      --c-ok: #22c55e;
+
+      --font-ui: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Cascadia Code', monospace;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg-0);
+      color: var(--txt-1);
+      font-family: var(--font-ui);
+      font-size: 12.5px;
+      overflow: hidden;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* ── TOP HEADER BAR ── */
+    .topbar {
+      height: 44px;
+      flex-shrink: 0;
+      background: var(--bg-1);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      gap: 14px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding-right: 14px;
+      border-right: 1px solid var(--border);
+    }
+    .brand-mark {
+      width: 24px;
+      height: 24px;
+      border-radius: 5px;
+      background: linear-gradient(145deg, #1b2838, #101822);
+      border: 1px solid var(--accent-line);
+      display: grid;
+      place-items: center;
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-weight: 600;
+      font-size: 11px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+    }
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.15;
+    }
+    .brand-name {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--txt-0);
+      letter-spacing: 0.2px;
+    }
+    .brand-sub {
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      color: var(--txt-3);
+      letter-spacing: 0.4px;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .spacer { flex: 1; }
+
+    .btn {
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 5px;
+      border: 1px solid var(--border-hi);
+      background: var(--bg-2);
+      color: var(--txt-1);
+      font-family: var(--font-ui);
+      font-size: 12px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      transition: background .12s, border-color .12s, color .12s;
+    }
+    .btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    .btn:hover { background: var(--bg-hover); color: var(--txt-0); border-color: #414e63; }
+    .btn.ghost { background: transparent; border-color: transparent; color: var(--txt-2); }
+    .btn.ghost:hover { background: var(--bg-3); color: var(--txt-0); }
+    .btn.primary {
+      background: var(--accent-soft);
+      border-color: var(--accent-line);
+      color: #67d4f5;
+    }
+    .btn.primary:hover { background: rgba(24, 164, 208, 0.22); color: #fff; }
+    .btn.export {
+      background: rgba(34, 197, 94, 0.12);
+      border-color: rgba(34, 197, 94, 0.35);
+      color: #4ade80;
+    }
+    .btn.export:hover { background: rgba(34, 197, 94, 0.2); color: #86efac; }
+
+    .v-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+
+    /* ── MAIN 3-PANE LAYOUT ── */
+    .main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 276px 1fr 370px;
+      min-height: 0;
+    }
+
+    .sidebar {
+      background: var(--bg-1);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .sidebar.left { border-right: 1px solid var(--border); }
+    .sidebar.right { border-left: 1px solid var(--border); }
+
+    .panel-hdr {
+      height: 34px;
+      flex-shrink: 0;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .panel-title {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--txt-2);
+    }
+    .panel-meta {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--txt-3);
+    }
+
+    /* ── LEFT: PARTS LIST ── */
+    .search-wrap {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+    .search-wrap svg {
+      position: absolute;
+      left: 18px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 13px;
+      height: 13px;
+      stroke: var(--txt-3);
+      fill: none;
+      stroke-width: 1.8;
+    }
+    .search-input {
+      width: 100%;
+      height: 28px;
+      padding: 0 10px 0 28px;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      background: var(--bg-0);
+      color: var(--txt-0);
+      font-family: var(--font-ui);
+      font-size: 12px;
+      outline: none;
+    }
+    .search-input:focus { border-color: var(--accent); }
+    .search-input::placeholder { color: var(--txt-3); }
+
+    .parts-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .part-item {
+      padding: 9px 10px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      background: transparent;
+      cursor: pointer;
+      transition: background .1s, border-color .1s;
+    }
+    .part-item:hover { background: var(--bg-2); }
+    .part-item.active {
+      background: var(--bg-3);
+      border-color: var(--accent-line);
+      box-shadow: inset 2px 0 0 var(--accent);
+    }
+    .part-item.muted { opacity: 0.48; }
+    .part-row-1 {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 4px;
+    }
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .part-id {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--txt-0);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+    .part-row-2 {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--txt-2);
+      margin-bottom: 6px;
+      padding-left: 13px;
+    }
+    .part-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding-left: 13px;
+    }
+    .chip {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: var(--bg-0);
+      border: 1px solid var(--border);
+      color: var(--txt-2);
+    }
+    .chip.c-blue { color: var(--c-drill-v); border-color: rgba(56,189,248,0.22); }
+    .chip.c-amber { color: var(--c-lamello); border-color: rgba(245,158,11,0.25); }
+    .chip.c-green { color: var(--c-groove); border-color: rgba(52,211,153,0.25); }
+    .chip.c-purple { color: var(--c-mill-top); border-color: rgba(192,132,252,0.25); }
+    .chip.c-edge { color: var(--c-edge); border-color: rgba(225,107,120,0.25); }
+
+    .left-footer {
+      padding: 8px 12px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-0);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--txt-3);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* ── CENTER: PROFESSIONAL CAD VIEWPORT ── */
+    .viewport-pane {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: #0d1015;
+    }
+
+    /* Floating top viewport bar */
+    .vp-floating-top {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      pointer-events: none;
+    }
+    .hud-group {
+      pointer-events: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 3px;
+      border-radius: 7px;
+      background: rgba(17, 20, 26, 0.88);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border-hi);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    }
+    .hud-btn {
+      height: 26px;
+      padding: 0 9px;
+      border-radius: 4px;
+      border: none;
+      background: transparent;
+      color: var(--txt-2);
+      font-family: var(--font-ui);
+      font-size: 11.5px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      transition: all .12s;
+    }
+    .hud-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+    .hud-btn:hover { background: var(--bg-hover); color: var(--txt-0); }
+    .hud-btn.active { background: var(--accent-soft); color: #67d4f5; }
+    .hud-sep { width: 1px; height: 16px; background: var(--border); margin: 0 3px; }
+
+    /* Viewport Canvas Container */
+    .vp-stage {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      cursor: grab;
+      background:
+        radial-gradient(circle at 50% 45%, rgba(24, 164, 208, 0.045) 0%, transparent 62%),
+        linear-gradient(to right, rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255,255,255,0.025) 1px, transparent 1px),
+        #0c0f14;
+      background-size: 100% 100%, 32px 32px, 32px 32px, 100% 100%;
+    }
+    .vp-stage:active { cursor: grabbing; }
+    svg#cadSvg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Floating Bottom HUD (Coords + Zoom + Legend) */
+    .vp-floating-bottom {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      pointer-events: none;
+    }
+    .hud-pill {
+      pointer-events: auto;
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 6px;
+      background: rgba(17, 20, 26, 0.88);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border);
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--txt-2);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    }
+    .coord-val { color: var(--txt-0); font-weight: 500; }
+    .leg-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+    .leg-bar { width: 10px; height: 3px; border-radius: 1px; display: inline-block; margin-right: 4px; vertical-align: middle; }
+
+    /* Hover Tooltip inside Viewport */
+    .cad-tooltip {
+      position: absolute;
+      z-index: 20;
+      pointer-events: none;
+      background: rgba(14, 17, 23, 0.95);
+      border: 1px solid var(--accent-line);
+      border-radius: 5px;
+      padding: 6px 9px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--txt-0);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+      opacity: 0;
+      transition: opacity .08s;
+      white-space: nowrap;
+    }
+    .cad-tooltip.show { opacity: 1; }
+    .cad-tooltip .tt-sub { color: var(--txt-2); font-size: 9.5px; margin-top: 2px; }
+
+    /* ── RIGHT: INSPECTOR ── */
+    .insp-tabs {
+      height: 34px;
+      flex-shrink: 0;
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-0);
+      padding: 0 6px;
+      gap: 4px;
+      align-items: flex-end;
+    }
+    .insp-tab {
+      height: 29px;
+      padding: 0 12px;
+      border: 1px solid transparent;
+      border-bottom: none;
+      border-radius: 5px 5px 0 0;
+      background: transparent;
+      color: var(--txt-2);
+      font-size: 11.5px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .insp-tab:hover { color: var(--txt-0); }
+    .insp-tab.active {
+      background: var(--bg-1);
+      border-color: var(--border);
+      color: var(--txt-0);
+      position: relative;
+    }
+    .insp-tab.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: var(--bg-1);
+    }
+
+    .insp-body {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+    }
+    .card {
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .card-hdr {
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.9px;
+      color: var(--txt-3);
+      margin-bottom: 9px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .dims-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+    .dim-box {
+      background: var(--bg-0);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 7px 9px;
+    }
+    .dim-k { font-family: var(--font-mono); font-size: 9px; color: var(--txt-3); }
+    .dim-v { font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--txt-0); margin-top: 2px; }
+    .dim-u { font-size: 9.5px; color: var(--txt-3); font-weight: 400; margin-left: 2px; }
+
+    /* Interactive Mini Edge Diagram */
+    .edge-diagram {
+      display: grid;
+      grid-template-columns: 74px 1fr 74px;
+      grid-template-rows: 26px 46px 26px;
+      gap: 5px;
+      align-items: center;
+    }
+    .edge-btn {
+      height: 100%;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--bg-0);
+      color: var(--txt-2);
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: all .12s;
+    }
+    .edge-btn:hover { border-color: var(--border-hi); color: var(--txt-0); }
+    .edge-btn.on {
+      border-color: rgba(225, 107, 120, 0.55);
+      background: rgba(225, 107, 120, 0.12);
+      color: #f39aa4;
+      font-weight: 600;
+    }
+    .edge-center {
+      height: 100%;
+      border-radius: 4px;
+      background: var(--bg-2);
+      border: 1px dashed var(--border-hi);
+      display: grid;
+      place-items: center;
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      color: var(--txt-3);
+    }
+
+    /* Modern Toggle Switches */
+    .toggle-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--txt-1);
+    }
+    .switch {
+      position: relative;
+      width: 30px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute;
+      inset: 0;
+      background: var(--bg-0);
+      border: 1px solid var(--border-hi);
+      border-radius: 16px;
+      transition: .15s;
+    }
+    .slider::before {
+      content: '';
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      left: 2px;
+      top: 2px;
+      background: var(--txt-3);
+      border-radius: 50%;
+      transition: .15s;
+    }
+    .switch input:checked + .slider {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+    }
+    .switch input:checked + .slider::before {
+      transform: translateX(14px);
+      background: var(--accent);
+    }
+
+    /* Operations Table */
+    table.ops-tbl {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    table.ops-tbl th {
+      position: sticky;
+      top: 0;
+      background: var(--bg-0);
+      font-family: var(--font-mono);
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--txt-3);
+      padding: 7px 9px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+    table.ops-tbl td {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      padding: 6px 9px;
+      border-bottom: 1px solid rgba(36, 43, 54, 0.65);
+      color: var(--txt-1);
+    }
+    table.ops-tbl tr:hover td { background: var(--bg-2); cursor: pointer; }
+    table.ops-tbl tr.sel td { background: var(--accent-soft); color: var(--txt-0); }
+    .op-type-cell { display: flex; align-items: center; gap: 6px; }
+    .face-pill {
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: var(--bg-0);
+      border: 1px solid var(--border);
+      font-size: 9.5px;
+      color: var(--txt-2);
+    }
+
+    /* XML Code View */
+    .xml-toolbar {
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-0);
+    }
+    pre.xml-code {
+      padding: 10px 12px;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      line-height: 1.55;
+      color: #93b4cc;
+      white-space: pre-wrap;
+      user-select: text;
+    }
+
+    /* ── BOTTOM STATUS BAR ── */
+    .statusbar {
+      height: 26px;
+      flex-shrink: 0;
+      background: var(--bg-0);
+      border-top: 1px solid var(--border);
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--txt-3);
+    }
+    .st-left, .st-right { display: flex; align-items: center; gap: 12px; }
+    .st-ready { color: var(--c-ok); display: inline-flex; align-items: center; gap: 5px; }
+    .st-ready::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--c-ok); }
+
+    .toast {
+      position: fixed;
+      bottom: 36px;
+      left: 50%;
+      transform: translateX(-50%) translateY(8px);
+      background: var(--bg-2);
+      border: 1px solid var(--accent-line);
+      color: var(--txt-0);
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.65);
+      opacity: 0;
+      pointer-events: none;
+      transition: all .18s ease;
+      z-index: 50;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #262e3a; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #364152; }
+
+    /* SETTINGS MODAL */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(5, 7, 10, 0.72);
+      backdrop-filter: blur(5px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal-backdrop.open { display: flex; }
+    .settings-modal {
+      width: 760px;
+      max-width: 94vw;
+      height: 520px;
+      max-height: 88vh;
+      background: var(--bg-1);
+      border: 1px solid var(--border-hi);
+      border-radius: 10px;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.75);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .modal-hdr {
+      height: 46px;
+      padding: 0 16px;
+      background: var(--bg-2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-title {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--txt-0);
+    }
+    .modal-title svg {
+      width: 15px; height: 15px;
+      stroke: var(--accent); fill: none; stroke-width: 2;
+    }
+    .modal-close {
+      width: 28px; height: 28px;
+      border-radius: 5px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--txt-2);
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      font-size: 16px;
+    }
+    .modal-close:hover { background: var(--bg-hover); color: var(--txt-0); }
+    .settings-split {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+    .settings-nav {
+      width: 196px;
+      background: var(--bg-0);
+      border-right: 1px solid var(--border);
+      padding: 10px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .snav-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--txt-2);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: left;
+      transition: all .12s ease;
+    }
+    .snav-item svg {
+      width: 14px; height: 14px;
+      stroke: currentColor; fill: none; stroke-width: 1.8;
+      flex-shrink: 0;
+    }
+    .snav-item:hover { background: var(--bg-2); color: var(--txt-0); }
+    .snav-item.active {
+      background: var(--accent-soft);
+      border-color: var(--accent-line);
+      color: var(--txt-0);
+    }
+    .snav-item.active svg { stroke: var(--accent); }
+    .settings-body {
+      flex: 1;
+      padding: 16px 20px;
+      overflow-y: auto;
+    }
+    .scat-pane { display: none; }
+    .scat-pane.active { display: block; }
+    .scat-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--txt-0);
+      margin-bottom: 4px;
+    }
+    .scat-desc {
+      font-size: 11.5px;
+      color: var(--txt-2);
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .cfg-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 16px;
+      margin-bottom: 14px;
+    }
+    .cfg-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .cfg-field.full { grid-column: 1 / -1; }
+    .cfg-label {
+      font-size: 11.5px;
+      color: var(--txt-1);
+      display: flex;
+      justify-content: space-between;
+    }
+    .cfg-unit {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--txt-3);
+    }
+    .cfg-input, .cfg-select {
+      height: 31px;
+      background: var(--bg-0);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 0 9px;
+      color: var(--txt-0);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      outline: none;
+    }
+    .cfg-input:focus, .cfg-select:focus { border-color: var(--accent); }
+    .path-row {
+      display: flex;
+      gap: 6px;
+    }
+    .path-row .cfg-input { flex: 1; font-size: 11.5px; }
+    .cfg-toggle-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .cfg-toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 12px;
+      color: var(--txt-1);
+    }
+    .modal-footer {
+      height: 50px;
+      padding: 0 16px;
+      background: var(--bg-2);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-footer-right { display: flex; gap: 8px; }
+  </style>
+</head>
+<body>
+<div class="app">
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">NX</div>
+      <div class="brand-text">
+        <span class="brand-name">Nanxing Studio</span>
+        <span class="brand-sub">STEP → SCX · B-REP ENGINE</span>
+      </div>
+    </div>
+
+    <div class="nav-actions">
+      <button class="btn primary" onclick="notify('Wczytano 5 formatek STEP (34 ms)')">
+        <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Otwórz STEP
+      </button>
+      <button class="btn" onclick="notify('Sparowano obrzeża F1–F4 z pliku rozkroju CSV')">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+        Wczytaj CSV
+      </button>
+      <div class="v-sep"></div>
+      <button class="btn ghost" onclick="autoAlignGrooves()">
+        <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Dopasuj nuty pod piłę X
+      </button>
+      <button class="btn ghost" onclick="notify('Przeliczono geometrię 3D dla wszystkich formatek')">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Przelicz
+      </button>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="nav-actions">
+      <button class="btn" onclick="openSettings()">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Ustawienia
+      </button>
+      <div class="v-sep"></div>
+      <button class="btn" onclick="notify('Zapisano aktywny program do SCX_NANXING/')">
+        <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Zapisz SCX
+      </button>
+      <button class="btn export" onclick="exportAll()">
+        <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Generuj wszystkie (4)
+      </button>
+    </div>
+  </header>
+
+  <!-- WORKSPACE -->
+  <div class="main">
+    <!-- LEFT SIDEBAR -->
+    <aside class="sidebar left">
+      <div class="panel-hdr">
+        <span class="panel-title">Formatki</span>
+        <span class="panel-meta" id="partsCountMeta">5 wczytanych</span>
+      </div>
+      <div class="search-wrap">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input class="search-input" id="searchInput" placeholder="Szukaj formatki..." oninput="renderPartsList()" />
+      </div>
+      <div class="parts-scroll" id="partsList"></div>
+      <div class="left-footer">
+        <span>Do eksportu: <strong style="color:var(--txt-0);" id="exportCountLbl">4</strong></span>
+        <span>Pominięte: <strong style="color:var(--txt-2);" id="skipCountLbl">1</strong></span>
+      </div>
+    </aside>
+
+    <!-- CENTER CAD VIEWPORT -->
+    <section class="viewport-pane">
+      <!-- Floating Top HUD -->
+      <div class="vp-floating-top">
+        <div class="hud-group">
+          <button class="hud-btn active" id="viewAll" onclick="setViewMode('ALL')">X-Ray</button>
+          <button class="hud-btn" id="viewTop" onclick="setViewMode('TOP')">Góra (F5)</button>
+          <button class="hud-btn" id="viewBot" onclick="setViewMode('BOT')">Dół (F6)</button>
+          <div class="hud-sep"></div>
+          <button class="hud-btn active" id="btnDims" onclick="toggleLayer('dims')" title="Linie wymiarowe">Wymiary</button>
+          <button class="hud-btn active" id="btnClamps" onclick="toggleLayer('clamps')" title="Łapy i bolec pozycjonujący">Mocowanie</button>
+        </div>
+
+        <div class="hud-group">
+          <button class="hud-btn" onclick="rotate90()" title="Obrót 90° w płaszczyźnie stołu">
+            <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+            90°
+          </button>
+          <button class="hud-btn" onclick="rotate180()" title="Obrót 180° w płaszczyźnie stołu">180°</button>
+          <button class="hud-btn" onclick="flipTopBottom()" title="Przerzut Góra ↔ Dół (180° wokół X)">
+            <svg viewBox="0 0 24 24"><polyline points="7 16 3 12 7 8"/><polyline points="17 8 21 12 17 16"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
+            Góra/Dół
+          </button>
+          <div class="hud-sep"></div>
+          <button class="hud-btn" onclick="mirrorX()" title="Odbicie lustrzane X">Lustro X</button>
+          <button class="hud-btn" onclick="mirrorY()" title="Odbicie lustrzane Y">Lustro Y</button>
+          <div class="hud-sep"></div>
+          <button class="hud-btn" onclick="resetCurrent()" title="Przywróć orientację z STEP">Reset</button>
+        </div>
+      </div>
+
+      <!-- Interactive CAD Stage -->
+      <div class="vp-stage" id="vpStage">
+        <svg id="cadSvg" viewBox="0 0 960 640"></svg>
+        <div class="cad-tooltip" id="cadTooltip"></div>
+      </div>
+
+      <!-- Floating Bottom HUD -->
+      <div class="vp-floating-bottom">
+        <div class="hud-pill">
+          <span>X: <span class="coord-val" id="curX">0.0</span> mm</span>
+          <span>Y: <span class="coord-val" id="curY">0.0</span> mm</span>
+          <span style="color:var(--border-hi)">|</span>
+          <span id="zoomLbl">100%</span>
+          <button class="hud-btn" style="height:20px; padding:0 6px; font-size:10px;" onclick="resetZoom()">Dopasuj</button>
+        </div>
+
+        <div class="hud-pill">
+          <span><span class="leg-dot" style="background:var(--c-drill-v)"></span>Pion</span>
+          <span><span class="leg-dot" style="background:var(--c-drill-h)"></span>Bok</span>
+          <span><span class="leg-bar" style="background:var(--c-lamello)"></span>Lamello</span>
+          <span><span class="leg-bar" style="background:var(--c-groove)"></span>Nuta X</span>
+          <span><span class="leg-bar" style="background:var(--c-mill-top)"></span>Frez ATC</span>
+          <span><span class="leg-bar" style="background:var(--c-mill-bot)"></span>Dolny Ø12</span>
+          <span><span class="leg-bar" style="background:var(--c-edge)"></span>Obrzeże</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT INSPECTOR -->
+    <aside class="sidebar right">
+      <div class="insp-tabs">
+        <button class="insp-tab active" id="tabPropsBtn" onclick="setRightTab('PROPS')">Właściwości</button>
+        <button class="insp-tab" id="tabOpsBtn" onclick="setRightTab('OPS')">Operacje (<span id="opsBadge">0</span>)</button>
+        <button class="insp-tab" id="tabXmlBtn" onclick="setRightTab('XML')">SCX XML</button>
+      </div>
+      <div class="insp-body" id="inspBody"></div>
+    </aside>
+  </div>
+
+  <!-- STATUS BAR -->
+  <footer class="statusbar">
+    <div class="st-left">
+      <span class="st-ready">SILNIK GOTOWY</span>
+      <span>Folder: D:\WorkerResource\WlepyBsolid\ZLECENIA\Szafka_Lamelo\</span>
+      <span>CSV: okleiny sparowane</span>
+    </div>
+    <div class="st-right">
+      <span>Nanxing 6-stronna · Piła 4 mm (oś X) · Dolny frez Ø12</span>
+      <span>34 ms</span>
+    </div>
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const initialParts = [
+  {
+    id: 'S01_01_bokll_18x200x400',
+    L: 400, W: 200, T: 18,
+    note: 'Face 5 u góry',
+    edges: { 1: 0, 2: 0.8, 3: 0, 4: 0.8 },
+    ops: [
+      { kind: 'DRILL_V', face: 5, x: 9, y: 32, z: 0, d: 8, dep: 10 },
+      { kind: 'DRILL_V', face: 5, x: 9, y: 64, z: 0, d: 8, dep: 10 },
+      { kind: 'DRILL_V', face: 5, x: 391, y: 32, z: 0, d: 8, dep: 10 },
+      { kind: 'DRILL_V', face: 5, x: 391, y: 64, z: 0, d: 8, dep: 10 },
+      { kind: 'LAMELLO', face: 5, dir: 'Y', x: 9, y: 50, z: 18, len: 66, w: 9.8, dep: 14.1 },
+      { kind: 'LAMELLO', face: 5, dir: 'Y', x: 9, y: 150, z: 18, len: 66, w: 9.8, dep: 14.1 },
+      { kind: 'LAMELLO', face: 5, dir: 'Y', x: 391, y: 50, z: 18, len: 66, w: 9.8, dep: 14.1 },
+      { kind: 'LAMELLO', face: 5, dir: 'Y', x: 391, y: 150, z: 18, len: 66, w: 9.8, dep: 14.1 },
+    ]
+  },
+  {
+    id: 'S01_03_gora_18x200x264',
+    L: 264, W: 200, T: 18,
+    note: 'Auto-obrót 180° X (imbus Ø6)',
+    edges: { 1: 0, 2: 2.0, 3: 0, 4: 0 },
+    ops: [
+      { kind: 'DRILL_V', face: 5, x: 7.5, y: 50, z: 0, d: 6, dep: 9, noCone: true },
+      { kind: 'DRILL_V', face: 5, x: 7.5, y: 150, z: 0, d: 6, dep: 9, noCone: true },
+      { kind: 'DRILL_V', face: 5, x: 256.5, y: 50, z: 0, d: 6, dep: 9, noCone: true },
+      { kind: 'DRILL_V', face: 5, x: 256.5, y: 150, z: 0, d: 6, dep: 9, noCone: true },
+      { kind: 'DRILL_H', face: 4, x: 0, y: 32, z: 9, d: 8, dep: 24 },
+      { kind: 'DRILL_H', face: 4, x: 0, y: 168, z: 9, d: 8, dep: 24 },
+      { kind: 'DRILL_H', face: 3, x: 264, y: 32, z: 9, d: 8, dep: 24 },
+      { kind: 'DRILL_H', face: 3, x: 264, y: 168, z: 9, d: 8, dep: 24 },
+      { kind: 'LAMELLO', face: 4, dir: 'Y', x: 0, y: 50, z: 9, len: 66, w: 10.15, dep: 14.1 },
+      { kind: 'LAMELLO', face: 4, dir: 'Y', x: 0, y: 150, z: 9, len: 66, w: 10.15, dep: 14.1 },
+      { kind: 'LAMELLO', face: 3, dir: 'Y', x: 264, y: 50, z: 9, len: 66, w: 10.15, dep: 14.1 },
+      { kind: 'LAMELLO', face: 3, dir: 'Y', x: 264, y: 150, z: 9, len: 66, w: 10.15, dep: 14.1 },
+    ]
+  },
+  {
+    id: 'S05_46_bok_L_18x382x500',
+    L: 500, W: 382, T: 18,
+    note: 'Nuta X + podcięcie R12',
+    edges: { 1: 0, 2: 0.8, 3: 0.8, 4: 0.8 },
+    notch: { x1: 440, y1: 352, x2: 500, y2: 382, r: 12 },
+    ops: [
+      { kind: 'DRILL_V', face: 5, x: 251, y: 92, z: 0, d: 7, dep: 18 },
+      { kind: 'DRILL_V', face: 5, x: 251, y: 300, z: 0, d: 7, dep: 18 },
+      { kind: 'DRILL_V', face: 5, x: 251, y: 60, z: 0, d: 8, dep: 6 },
+      { kind: 'DRILL_V', face: 5, x: 251, y: 196, z: 0, d: 8, dep: 6 },
+      { kind: 'DRILL_H', face: 4, x: 0, y: 190, z: 9, d: 5, dep: 76 },
+      { kind: 'DRILL_H', face: 3, x: 500, y: 82, z: 9, d: 5, dep: 38 },
+      { kind: 'GROOVE_X', face: 5, x1: 0, y1: 364, x2: 440, y2: 364, w: 6, dep: 8 },
+    ]
+  },
+  {
+    id: 'K54_Blat_LED_18x600x1200',
+    L: 1200, W: 600, T: 18,
+    note: 'ATC Ø60 + ścięcie | Dolny Ø12',
+    edges: { 1: 2.0, 2: 2.0, 3: 2.0, 4: 2.0 },
+    chamfer: { corner: 'TR', size: 120 },
+    ops: [
+      { kind: 'MILL_CIRCLE', face: 5, x: 180, y: 470, d: 60, dep: 18.1 },
+      { kind: 'MILL_CHAMFER', face: 5, x1: 1080, y1: 600, x2: 1200, y2: 480, dep: 18.1 },
+      { kind: 'MILL_BOT12', face: 6, x1: 80, y1: 120, x2: 1040, y2: 120, w: 12, dep: 8 },
+      { kind: 'DRILL_V', face: 5, x: 60, y: 60, d: 15, dep: 13.5 },
+      { kind: 'DRILL_H', face: 2, x: 60, y: 0, z: 9, d: 8, dep: 29.65 },
+    ]
+  },
+  {
+    id: '47_Cokol_lico_Swspolne_P56',
+    L: 1788, W: 100, T: 18,
+    note: 'Brak operacji (pominięto)',
+    edges: { 1: 0, 2: 0.8, 3: 0, 4: 0 },
+    ops: []
+  }
+];
+
+let parts = JSON.parse(JSON.stringify(initialParts));
+let selectedIdx = 0;
+let selectedOpIdx = -1;
+let viewMode = 'ALL';
+let rightTab = 'PROPS';
+let layers = { dims: true, clamps: true };
+
+// Machine rules state
+let rules = {
+  cone: true,
+  limit50: true,
+  partial: false,
+  bot12: true,
+  skipEmpty: true
+};
+
+// Viewport Zoom & Pan state
+let zoom = 1;
+let panX = 0;
+let panY = 0;
+let isDragging = false;
+let dragStartX = 0, dragStartY = 0;
+let lastTransform = { ox: 0, oy: 0, scale: 1, bh: 0 };
+
+function clone(o) { return JSON.parse(JSON.stringify(o)); }
+
+function notify(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(window._tt);
+  window._tt = setTimeout(() => t.classList.remove('show'), 2300);
+}
+
+function getEffectiveDepth(op) {
+  let dep = op.dep;
+  if ((op.kind === 'DRILL_V' || op.kind === 'DRILL_H') && rules.cone && !op.noCone && op.d <= 12.5) {
+    const through = (op.kind === 'DRILL_V' && dep >= parts[selectedIdx].T - 0.2);
+    if (!through) dep = dep + (op.d / 2) / Math.tan(59 * Math.PI / 180);
+  }
+  if (op.kind === 'DRILL_H' && rules.limit50 && dep > 50) dep = 50;
+  return Number(dep.toFixed(4));
+}
+
+function opColor(op) {
+  if (op.kind === 'DRILL_V') return op.face === 6 ? 'var(--c-mill-bot)' : 'var(--c-drill-v)';
+  if (op.kind === 'DRILL_H') return 'var(--c-drill-h)';
+  if (op.kind === 'LAMELLO') return 'var(--c-lamello)';
+  if (op.kind.startsWith('GROOVE')) return 'var(--c-groove)';
+  if (op.kind === 'MILL_BOT12') return 'var(--c-mill-bot)';
+  return 'var(--c-mill-top)';
+}
+
+function opLabel(op) {
+  if (op.kind === 'LAMELLO') return `Lamello P14 (${op.dir})`;
+  if (op.kind === 'DRILL_V') return `Wiercenie Ø${op.d}`;
+  if (op.kind === 'DRILL_H') return `Wierc. bok Ø${op.d}`;
+  if (op.kind.startsWith('GROOVE')) return `Nuta piła (${op.kind.slice(-1)})`;
+  if (op.kind === 'MILL_BOT12') return `Dolny frez Ø12`;
+  if (op.kind === 'MILL_CIRCLE') return `Frez ATC Ø${op.d}`;
+  return `Ścięcie ATC`;
+}
+
+function renderPartsList() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const list = document.getElementById('partsList');
+  list.innerHTML = '';
+
+  const exportable = parts.filter(p => !rules.skipEmpty || p.ops.length > 0).length;
+  document.getElementById('exportCountLbl').textContent = exportable;
+  document.getElementById('skipCountLbl').textContent = parts.length - exportable;
+
+  parts.forEach((p, idx) => {
+    if (q && !p.id.toLowerCase().includes(q)) return;
+    const isEmpty = p.ops.length === 0;
+    const el = document.createElement('div');
+    el.className = 'part-item' + (idx === selectedIdx ? ' active' : '') + (isEmpty && rules.skipEmpty ? ' muted' : '');
+    el.onclick = () => { selectedIdx = idx; selectedOpIdx = -1; resetZoom(false); renderAll(); };
+
+    const drills = p.ops.filter(o => o.kind.startsWith('DRILL')).length;
+    const lam = p.ops.filter(o => o.kind === 'LAMELLO').length;
+    const groove = p.ops.filter(o => o.kind.startsWith('GROOVE')).length;
+    const mill = p.ops.filter(o => o.kind.startsWith('MILL')).length;
+    const edgeCnt = Object.values(p.edges).filter(v => v > 0).length;
+
+    let chips = '';
+    if (isEmpty) chips += `<span class="chip">0 operacji</span>`;
+    else {
+      if (drills) chips += `<span class="chip c-blue">${drills}× otw.</span>`;
+      if (lam) chips += `<span class="chip c-amber">${lam}× Lamello</span>`;
+      if (groove) chips += `<span class="chip c-green">${groove}× nuta</span>`;
+      if (mill) chips += `<span class="chip c-purple">${mill}× frez</span>`;
+    }
+    if (edgeCnt) chips += `<span class="chip c-edge">CSV ${edgeCnt}×</span>`;
+
+    const dotCol = isEmpty ? '#566578' : '#22c55e';
+    el.innerHTML = `
+      <div class="part-row-1">
+        <span class="status-dot" style="background:${dotCol}"></span>
+        <span class="part-id">${p.id}</span>
+      </div>
+      <div class="part-row-2">
+        <span>${p.L} × ${p.W} × ${p.T} mm</span>
+      </div>
+      <div class="part-chips">${chips}</div>
+    `;
+    list.appendChild(el);
+  });
+}
+
+function renderCanvas() {
+  const p = parts[selectedIdx];
+  const svg = document.getElementById('cadSvg');
+  const Wbox = 960, Hbox = 640;
+  const padX = 130, padTop = 120, padBot = 95;
+  const baseScale = Math.min((Wbox - padX * 2) / p.L, (Hbox - padTop - padBot) / p.W);
+  const scale = baseScale * zoom;
+  const bw = p.L * scale;
+  const bh = p.W * scale;
+  const ox = (Wbox - bw) / 2 + panX;
+  const oy = padTop + (Hbox - padTop - padBot - bh) / 2 + panY;
+  lastTransform = { ox, oy, scale, bh };
+
+  const sx = x => ox + x * scale;
+  const sy = y => oy + bh - y * scale;
+
+  let html = `
+    <defs>
+      <filter id="boardShadow" x="-10%" y="-10%" width="120%" height="125%">
+        <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.55" />
+      </filter>
+      <linearGradient id="boardGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#1c222b"/>
+        <stop offset="100%" stop-color="#151921"/>
+      </linearGradient>
+      <linearGradient id="clampGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#2a3240"/>
+        <stop offset="100%" stop-color="#1a2029"/>
+      </linearGradient>
+      <pattern id="hatchGroove" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <line x1="0" y1="0" x2="0" y2="6" stroke="#34d399" stroke-width="1.2" stroke-opacity="0.35"/>
+      </pattern>
+      <pattern id="hatchClamp" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+        <line x1="0" y1="0" x2="0" y2="5" stroke="#64748b" stroke-width="1" stroke-opacity="0.25"/>
+      </pattern>
+    </defs>
+  `;
+
+  // ── 1. MACHINE CLAMPS (2 rectangular clamps at top, adapting to board length) & PIN (upper right) ──
+  if (layers.clamps) {
+    const clampW = Math.max(44, Math.min(82, bw * 0.14));
+    const clampH = 34;
+    const clampY = oy - clampH + 10;
+    const c1x = ox + bw * 0.22 - clampW / 2;
+    const c2x = ox + bw * 0.78 - clampW / 2;
+
+    // Guide rail behind clamps
+    html += `<line x1="${ox - 30}" y1="${clampY + 8}" x2="${ox + bw + 40}" y2="${clampY + 8}" stroke="#1f2632" stroke-width="6" stroke-linecap="round"/>`;
+    html += `<line x1="${ox - 30}" y1="${clampY + 8}" x2="${ox + bw + 40}" y2="${clampY + 8}" stroke="#2d3646" stroke-width="1"/>`;
+
+    [{ x: c1x, lbl: 'ŁAPA 1' }, { x: c2x, lbl: 'ŁAPA 2' }].forEach(c => {
+      html += `
+        <g>
+          <rect x="${c.x}" y="${clampY}" width="${clampW}" height="${clampH}" rx="2.5" fill="url(#clampGrad)" stroke="#475569" stroke-width="1.2"/>
+          <rect x="${c.x + 3}" y="${clampY + clampH - 11}" width="${clampW - 6}" height="8" rx="1" fill="url(#hatchClamp)" stroke="#334155" stroke-width="0.8"/>
+          <line x1="${c.x + 6}" y1="${clampY + clampH - 1}" x2="${c.x + clampW - 6}" y2="${clampY + clampH - 1}" stroke="#18a4d0" stroke-width="2" opacity="0.85"/>
+          <circle cx="${c.x + 9}" cy="${clampY + 8}" r="2" fill="#0f172a" stroke="#475569" stroke-width="0.9"/>
+          <circle cx="${c.x + clampW - 9}" cy="${clampY + 8}" r="2" fill="#0f172a" stroke="#475569" stroke-width="0.9"/>
+          <text x="${c.x + clampW / 2}" y="${clampY - 6}" fill="#64748b" font-size="9" font-family="JetBrains Mono, monospace" text-anchor="middle">${c.lbl}</text>
+        </g>
+      `;
+    });
+
+    // Circular positioning pin at upper right
+    const pinR = 10;
+    const pinCx = ox + bw + pinR + 4;
+    const pinCy = oy + Math.min(28, Math.max(14, bh * 0.16));
+    html += `
+      <g>
+        <line x1="${ox + bw}" y1="${pinCy}" x2="${pinCx - pinR}" y2="${pinCy}" stroke="#18a4d0" stroke-width="1.2" stroke-dasharray="2 2"/>
+        <circle cx="${pinCx}" cy="${pinCy}" r="${pinR}" fill="url(#clampGrad)" stroke="#64748b" stroke-width="1.4"/>
+        <circle cx="${pinCx}" cy="${pinCy}" r="4.5" fill="#0f172a" stroke="#18a4d0" stroke-width="1.2"/>
+        <line x1="${pinCx - 7}" y1="${pinCy}" x2="${pinCx + 7}" y2="${pinCy}" stroke="#94a3b8" stroke-width="0.7" opacity="0.6"/>
+        <line x1="${pinCx}" y1="${pinCy - 7}" x2="${pinCx}" y2="${pinCy + 7}" stroke="#94a3b8" stroke-width="0.7" opacity="0.6"/>
+        <text x="${pinCx + pinR + 7}" y="${pinCy + 3}" fill="#64748b" font-size="9" font-family="JetBrains Mono, monospace">BOLEC POZ.</text>
+      </g>
+    `;
+  }
+
+  // ── 2. BOARD BODY ──
+  let pts = [
+    [0, 0], [p.L, 0],
+    ...(p.chamfer && p.chamfer.corner === 'TR' ? [[p.L, p.W - p.chamfer.size], [p.L - p.chamfer.size, p.W]] : [[p.L, p.W]]),
+    [0, p.W]
+  ];
+  const polyPts = pts.map(pt => `${sx(pt[0])},${sy(pt[1])}`).join(' ');
+  html += `<polygon points="${polyPts}" fill="url(#boardGrad)" stroke="#3b4758" stroke-width="1.6" filter="url(#boardShadow)" />`;
+
+  // Subtle internal axis crosshairs
+  html += `<line x1="${ox}" y1="${oy + bh / 2}" x2="${ox + bw}" y2="${oy + bh / 2}" stroke="rgba(255,255,255,0.035)" stroke-dasharray="6 6"/>`;
+  html += `<line x1="${ox + bw / 2}" y1="${oy}" x2="${ox + bw / 2}" y2="${oy + bh}" stroke="rgba(255,255,255,0.035)" stroke-dasharray="6 6"/>`;
+
+  // Notch (podcięcie cokołu)
+  if (p.notch) {
+    const nx = sx(p.notch.x1), ny = sy(p.notch.y2);
+    const nw = (p.notch.x2 - p.notch.x1) * scale;
+    const nh = (p.notch.y2 - p.notch.y1) * scale;
+    html += `<rect x="${nx}" y="${ny}" width="${nw}" height="${nh}" fill="#0c0f14" stroke="#475569" stroke-dasharray="4 3" stroke-width="1.1"/>`;
+    if (rules.partial) {
+      html += `<circle cx="${sx(p.notch.x1 + p.notch.r)}" cy="${sy(p.notch.y1 + p.notch.r)}" r="${p.notch.r * scale}" fill="rgba(239,68,68,0.18)" stroke="#ef4444" stroke-width="1.2"/>`;
+    } else {
+      html += `<text x="${nx + nw/2}" y="${ny + nh/2 + 3}" fill="#64748b" font-size="8.5" font-family="JetBrains Mono, monospace" text-anchor="middle">R${p.notch.r} pominięte</text>`;
+    }
+  }
+
+  // ── 3. EDGE BANDING (CSV) ──
+  const edgeSpec = [
+    { f: 1, x1: 0, y1: p.W, x2: p.L, y2: p.W, offX: 0, offY: -3 },
+    { f: 2, x1: 0, y1: 0, x2: p.L, y2: 0, offX: 0, offY: 3 },
+    { f: 3, x1: p.L, y1: 0, x2: p.L, y2: p.W, offX: 3, offY: 0 },
+    { f: 4, x1: 0, y1: 0, x2: 0, y2: p.W, offX: -3, offY: 0 }
+  ];
+  edgeSpec.forEach(e => {
+    const th = p.edges[e.f] || 0;
+    if (th > 0) {
+      html += `<line x1="${sx(e.x1) + e.offX}" y1="${sy(e.y1) + e.offY}" x2="${sx(e.x2) + e.offX}" y2="${sy(e.y2) + e.offY}" stroke="#e16b78" stroke-width="3.5" stroke-linecap="round" opacity="0.9"/>`;
+    }
+  });
+
+  // ── 4. ENGINEERING DIMENSION LINES ──
+  if (layers.dims) {
+    // Bottom length dimension
+    const dy = oy + bh + 28;
+    html += `
+      <g stroke="#334155" stroke-width="1">
+        <line x1="${ox}" y1="${oy + bh + 6}" x2="${ox}" y2="${dy + 5}"/>
+        <line x1="${ox + bw}" y1="${oy + bh + 6}" x2="${ox + bw}" y2="${dy + 5}"/>
+        <line x1="${ox}" y1="${dy}" x2="${ox + bw}" y2="${dy}"/>
+      </g>
+      <rect x="${ox + bw/2 - 38}" y="${dy - 8}" width="76" height="16" rx="3" fill="#0c0f14"/>
+      <text x="${ox + bw/2}" y="${dy + 3.5}" fill="#94a3b8" font-size="10" font-family="JetBrains Mono, monospace" text-anchor="middle">${p.L}.0 mm</text>
+    `;
+    // Left width dimension
+    const dx = ox - 32;
+    html += `
+      <g stroke="#334155" stroke-width="1">
+        <line x1="${ox - 6}" y1="${oy}" x2="${dx - 5}" y2="${oy}"/>
+        <line x1="${ox - 6}" y1="${oy + bh}" x2="${dx - 5}" y2="${oy + bh}"/>
+        <line x1="${dx}" y1="${oy}" x2="${dx}" y2="${oy + bh}"/>
+      </g>
+      <text x="${dx - 6}" y="${oy + bh/2 + 3}" fill="#94a3b8" font-size="10" font-family="JetBrains Mono, monospace" text-anchor="end">${p.W}.0</text>
+    `;
+    // Face micro-labels
+    html += `<text x="${ox + bw/2}" y="${oy + bh + 15}" fill="${p.edges[2] ? '#e16b78' : '#475569'}" font-size="8.5" font-family="JetBrains Mono, monospace" text-anchor="middle">F2 PRZÓD${p.edges[2] ? ' · ' + p.edges[2] + 'mm' : ''}</text>`;
+    html += `<text x="${ox + bw/2}" y="${oy - 12}" fill="${p.edges[1] ? '#e16b78' : '#475569'}" font-size="8.5" font-family="JetBrains Mono, monospace" text-anchor="middle">F1 TYŁ${p.edges[1] ? ' · ' + p.edges[1] + 'mm' : ''}</text>`;
+  }
+
+  // Datum (0,0) axis gizmo
+  html += `
+    <g>
+      <line x1="${sx(0)}" y1="${sy(0)}" x2="${sx(0) + 24}" y2="${sy(0)}" stroke="#ef4444" stroke-width="1.5"/>
+      <line x1="${sx(0)}" y1="${sy(0)}" x2="${sx(0)}" y2="${sy(0) - 24}" stroke="#22c55e" stroke-width="1.5"/>
+      <circle cx="${sx(0)}" cy="${sy(0)}" r="3.5" fill="#0c0f14" stroke="#e2e8f0" stroke-width="1.5"/>
+      <text x="${sx(0) - 7}" y="${sy(0) + 14}" fill="#94a3b8" font-size="9" font-family="JetBrains Mono, monospace" text-anchor="end">(0,0)</text>
+    </g>
+  `;
+
+  // ── 5. MACHINING OPERATIONS ──
+  p.ops.forEach((op, idx) => {
+    if (viewMode === 'TOP' && op.face === 6) return;
+    if (viewMode === 'BOT' && op.face === 5) return;
+    const isSel = idx === selectedOpIdx;
+    const dep = getEffectiveDepth(op);
+    const hitAttrs = `data-op="${idx}" style="cursor:pointer" onmouseenter="showOpTooltip(evt, ${idx})" onmouseleave="hideTooltip()" onclick="selectOp(${idx})"`;
+
+    if (op.kind === 'DRILL_V') {
+      const r = Math.max(4, (op.d / 2) * scale);
+      const col = op.face === 6 ? '#e2e8f0' : '#38bdf8';
+      const through = dep >= p.T - 0.2;
+      html += `<g ${hitAttrs}>`;
+      if (isSel) html += `<circle cx="${sx(op.x)}" cy="${sy(op.y)}" r="${r + 5}" fill="none" stroke="#ffffff" stroke-width="1.2" stroke-dasharray="3 2"/>`;
+      html += `<circle cx="${sx(op.x)}" cy="${sy(op.y)}" r="${r}" fill="${col}" fill-opacity="${through ? '0.28' : '0.16'}" stroke="${col}" stroke-width="${isSel ? 2 : 1.3}"/>`;
+      if (!through && r > 5) html += `<circle cx="${sx(op.x)}" cy="${sy(op.y)}" r="${r * 0.55}" fill="none" stroke="${col}" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.6"/>`;
+      html += `<line x1="${sx(op.x) - 3}" y1="${sy(op.y)}" x2="${sx(op.x) + 3}" y2="${sy(op.y)}" stroke="${col}" stroke-width="0.9"/>`;
+      html += `<line x1="${sx(op.x)}" y1="${sy(op.y) - 3}" x2="${sx(op.x)}" y2="${sy(op.y) + 3}" stroke="${col}" stroke-width="0.9"/>`;
+      html += `</g>`;
+    } else if (op.kind === 'DRILL_H') {
+      const len = Math.min(dep, 50);
+      const r = Math.max(2.5, (op.d / 2) * scale);
+      let x1 = sx(op.x), y1 = sy(op.y), x2 = x1, y2 = y1;
+      let pathD = '';
+      if (op.face === 4) { x2 = sx(op.x + len); pathD = `M ${x1},${y1 - r} L ${x2 - 4},${y1 - r} L ${x2},${y1} L ${x2 - 4},${y1 + r} L ${x1},${y1 + r} Z`; }
+      if (op.face === 3) { x2 = sx(op.x - len); pathD = `M ${x1},${y1 - r} L ${x2 + 4},${y1 - r} L ${x2},${y1} L ${x2 + 4},${y1 + r} L ${x1},${y1 + r} Z`; }
+      if (op.face === 2) { y2 = sy(op.y + len); pathD = `M ${x1 - r},${y1} L ${x1 - r},${y2 + 4} L ${x1},${y2} L ${x1 + r},${y2 + 4} L ${x1 + r},${y1} Z`; }
+      if (op.face === 1) { y2 = sy(op.y - len); pathD = `M ${x1 - r},${y1} L ${x1 - r},${y2 - 4} L ${x1},${y2} L ${x1 + r},${y2 - 4} L ${x1 + r},${y1} Z`; }
+      html += `<g ${hitAttrs}>`;
+      html += `<path d="${pathD}" fill="rgba(96,165,250,0.18)" stroke="${isSel ? '#ffffff' : '#60a5fa'}" stroke-width="${isSel ? 1.8 : 1.1}" stroke-dasharray="3 2"/>`;
+      html += `<circle cx="${x1}" cy="${y1}" r="2.8" fill="#60a5fa"/>`;
+      html += `</g>`;
+    } else if (op.kind === 'LAMELLO') {
+      const w = (op.dir === 'Y' ? 9.8 : op.len) * scale;
+      const h = (op.dir === 'Y' ? op.len : 9.8) * scale;
+      let cx = op.x, cy = op.y;
+      if (op.face === 4) cx = 7;
+      if (op.face === 3) cx = p.L - 7;
+      if (op.face === 2) cy = 7;
+      if (op.face === 1) cy = p.W - 7;
+      html += `<g ${hitAttrs}>`;
+      html += `<rect x="${sx(cx) - w/2}" y="${sy(cy) - h/2}" width="${Math.max(6, w)}" height="${Math.max(6, h)}" rx="${Math.min(w,h)/2.5}" fill="rgba(245,158,11,0.2)" stroke="${isSel ? '#ffffff' : '#f59e0b'}" stroke-width="${isSel ? 2 : 1.3}"/>`;
+      html += `<circle cx="${sx(cx)}" cy="${sy(cy)}" r="1.8" fill="#f59e0b"/>`;
+      html += `</g>`;
+    } else if (op.kind === 'GROOVE_X' || op.kind === 'GROOVE_Y') {
+      const gx1 = sx(op.x1), gy1 = sy(op.y1), gx2 = sx(op.x2), gy2 = sy(op.y2);
+      const gw = Math.max(5, op.w * scale);
+      const rx = Math.min(gx1, gx2), ry = Math.min(gy1, gy2);
+      const rw = op.kind === 'GROOVE_X' ? Math.abs(gx2 - gx1) : gw;
+      const rh = op.kind === 'GROOVE_X' ? gw : Math.abs(gy2 - gy1);
+      const bx = op.kind === 'GROOVE_X' ? rx : rx - gw/2;
+      const by = op.kind === 'GROOVE_X' ? ry - gw/2 : ry;
+      html += `<g ${hitAttrs}>`;
+      html += `<rect x="${bx}" y="${by}" width="${rw}" height="${rh}" fill="url(#hatchGroove)" stroke="${isSel ? '#ffffff' : '#34d399'}" stroke-width="${isSel ? 1.8 : 1.1}"/>`;
+      html += `</g>`;
+    } else if (op.kind === 'MILL_CIRCLE') {
+      const r = (op.d / 2) * scale;
+      html += `<g ${hitAttrs}>`;
+      html += `<circle cx="${sx(op.x)}" cy="${sy(op.y)}" r="${r}" fill="rgba(192,132,252,0.14)" stroke="${isSel ? '#ffffff' : '#c084fc'}" stroke-width="${isSel ? 2 : 1.5}" stroke-dasharray="5 3"/>`;
+      html += `<text x="${sx(op.x)}" y="${sy(op.y) + 3.5}" fill="#d8b4fe" font-size="9.5" font-family="JetBrains Mono, monospace" text-anchor="middle">Ø${op.d}</text>`;
+      html += `</g>`;
+    } else if (op.kind === 'MILL_CHAMFER') {
+      html += `<g ${hitAttrs}>`;
+      html += `<line x1="${sx(op.x1)}" y1="${sy(op.y1)}" x2="${sx(op.x2)}" y2="${sy(op.y2)}" stroke="${isSel ? '#ffffff' : '#c084fc'}" stroke-width="3.5" stroke-linecap="round"/>`;
+      html += `</g>`;
+    } else if (op.kind === 'MILL_BOT12') {
+      const useBot = rules.bot12 && op.face === 6;
+      const col = useBot ? '#e2e8f0' : '#c084fc';
+      const gw = Math.max(6, op.w * scale);
+      const rx = Math.min(sx(op.x1), sx(op.x2));
+      const rw = Math.abs(sx(op.x2) - sx(op.x1));
+      html += `<g ${hitAttrs}>`;
+      html += `<rect x="${rx}" y="${sy(op.y1) - gw/2}" width="${rw}" height="${gw}" rx="${gw/2}" fill="rgba(226,232,240,0.12)" stroke="${isSel ? '#ffffff' : col}" stroke-width="${isSel ? 1.8 : 1.2}" stroke-dasharray="4 3"/>`;
+      html += `</g>`;
+    }
+  });
+
+  svg.innerHTML = html;
+  document.getElementById('zoomLbl').textContent = Math.round(zoom * 100) + '%';
+}
+
+function renderInspector() {
+  const p = parts[selectedIdx];
+  document.getElementById('opsBadge').textContent = p.ops.length;
+  const body = document.getElementById('inspBody');
+
+  if (rightTab === 'PROPS') {
+    const eTxt = f => p.edges[f] ? `${p.edges[f]} mm` : 'brak';
+    body.innerHTML = `
+      <div class="card">
+        <div class="card-hdr"><span>Gabaryty formatki</span><span style="color:var(--accent)">${p.note}</span></div>
+        <div class="dims-grid">
+          <div class="dim-box"><div class="dim-k">LENGTH (X)</div><div class="dim-v">${p.L}<span class="dim-u">mm</span></div></div>
+          <div class="dim-box"><div class="dim-k">WIDTH (Y)</div><div class="dim-v">${p.W}<span class="dim-u">mm</span></div></div>
+          <div class="dim-box"><div class="dim-k">THICK (Z)</div><div class="dim-v">${p.T}<span class="dim-u">mm</span></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-hdr"><span>Obrzeża CSV (kliknij krawędź)</span></div>
+        <div class="edge-diagram">
+          <div></div>
+          <button class="edge-btn ${p.edges[1] ? 'on' : ''}" onclick="cycleEdge(1)">F1 TYŁ · ${eTxt(1)}</button>
+          <div></div>
+          <button class="edge-btn ${p.edges[4] ? 'on' : ''}" onclick="cycleEdge(4)"><span>F4 LEWO</span><span>${eTxt(4)}</span></button>
+          <div class="edge-center">${p.L} × ${p.W}</div>
+          <button class="edge-btn ${p.edges[3] ? 'on' : ''}" onclick="cycleEdge(3)"><span>F3 PRAWO</span><span>${eTxt(3)}</span></button>
+          <div></div>
+          <button class="edge-btn ${p.edges[2] ? 'on' : ''}" onclick="cycleEdge(2)">F2 PRZÓD · ${eTxt(2)}</button>
+          <div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-hdr"><span>Reguły technologiczne Nanxing</span></div>
+        <div class="toggle-list">
+          ${toggleHtml('cone', 'Kompensacja stożka wiertła 118°')}
+          ${toggleHtml('limit50', 'Limit wiercenia bocznego (F1–F4): 50 mm')}
+          ${toggleHtml('partial', 'Częściowe otwory (IncludePartialHoles)')}
+          ${toggleHtml('bot12', 'Dolny frez stały Ø12 dla rowków 12 mm')}
+          ${toggleHtml('skipEmpty', 'Pomiń puste formatki przy eksporcie')}
+        </div>
+      </div>
+    `;
+  } else if (rightTab === 'OPS') {
+    if (p.ops.length === 0) {
+      body.innerHTML = `<div style="padding:28px 16px; text-align:center; color:var(--txt-3); font-family:var(--font-mono); font-size:11px;">Brak operacji na tej formatce.<br/>Program SCX nie zostanie wygenerowany.</div>`;
+      return;
+    }
+    const rows = p.ops.map((op, i) => {
+      const px = op.x !== undefined ? op.x : `${op.x1}..${op.x2}`;
+      const py = op.y !== undefined ? op.y : `${op.y1}..${op.y2}`;
+      return `<tr class="${i === selectedOpIdx ? 'sel' : ''}" onclick="selectOp(${i})">
+        <td><div class="op-type-cell"><span class="status-dot" style="background:${opColor(op)}"></span>${opLabel(op)}</div></td>
+        <td><span class="face-pill">F${op.face}</span></td>
+        <td>${px}</td>
+        <td>${py}</td>
+        <td>${getEffectiveDepth(op)}</td>
+      </tr>`;
+    }).join('');
+    body.innerHTML = `<table class="ops-tbl">
+      <thead><tr><th>Operacja</th><th>Ściana</th><th>X</th><th>Y</th><th>Głęb.</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  } else {
+    body.innerHTML = `
+      <div class="xml-toolbar">
+        <span style="font-family:var(--font-mono); font-size:10px; color:var(--txt-2);">${p.id}.scx</span>
+        <button class="btn" style="height:22px; font-size:11px;" onclick="copyXml()">Kopiuj XML</button>
+      </div>
+      <pre class="xml-code">${escapeHtml(buildXml(p))}</pre>
+    `;
+  }
+}
+
+function toggleHtml(key, label) {
+  return `<label class="toggle-row">
+    <span>${label}</span>
+    <span class="switch">
+      <input type="checkbox" ${rules[key] ? 'checked' : ''} onchange="rules.${key}=this.checked; renderAll();" />
+      <span class="slider"></span>
+    </span>
+  </label>`;
+}
+
+function cycleEdge(f) {
+  const p = parts[selectedIdx];
+  const vals = [0, 0.8, 2.0];
+  p.edges[f] = vals[(vals.indexOf(p.edges[f] || 0) + 1) % vals.length];
+  renderAll();
+}
+
+function selectOp(idx) {
+  selectedOpIdx = idx;
+  renderCanvas();
+  if (rightTab === 'OPS') renderInspector();
+}
+
+function showOpTooltip(evt, idx) {
+  const op = parts[selectedIdx].ops[idx];
+  const tt = document.getElementById('cadTooltip');
+  const stage = document.getElementById('vpStage').getBoundingClientRect();
+  tt.innerHTML = `<div>${opLabel(op)} · Face ${op.face}</div><div class="tt-sub">Głębokość: ${getEffectiveDepth(op)} mm${op.d ? ' · Ø' + op.d : ''}</div>`;
+  tt.style.left = (evt.clientX - stage.left + 14) + 'px';
+  tt.style.top = (evt.clientY - stage.top - 10) + 'px';
+  tt.classList.add('show');
+}
+function hideTooltip() { document.getElementById('cadTooltip').classList.remove('show'); }
+
+function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function buildXml(p) {
+  let lines = [
+    `<?xml version="1.0" encoding="utf-8"?>`,
+    `<Root Cad="BuiltInCad" version="2.0">`,
+    `  <Project><Panels>`,
+    `    <Panel IsProduce="true" ID="${p.id}" Length="${p.L}" Width="${p.W}" Thickness="${p.T}" MachiningPoint="1">`,
+    `      <Machines>`
+  ];
+  p.ops.forEach(op => {
+    const dep = getEffectiveDepth(op);
+    if (op.kind === 'DRILL_V') {
+      lines.push(`        <Machining Type="2" IsGenCode="2" Face="${op.face}" X="${op.x}" Y="${op.y}" Diameter="${op.d}" Depth="${dep}" />`);
+    } else if (op.kind === 'DRILL_H') {
+      lines.push(`        <Machining Type="1" IsGenCode="2" Face="${op.face}" X="${op.x}" Y="${op.y}" Z="${op.z}" Diameter="${op.d}" Depth="${dep}" />`);
+    } else if (op.kind === 'LAMELLO') {
+      lines.push(`        <Machining Type="1002" IsGenCode="2" Face="${op.face}" Direction="${op.dir}" X="${op.x}" Y="${op.y}" Z="${op.z}" Length="${op.len}" Width="${op.w}" MaxDepth="${op.dep}" />`);
+    } else if (op.kind.startsWith('GROOVE')) {
+      lines.push(`        <Machining Type="4" IsGenCode="2" Face="5" X="${op.x1}" Y="${op.y1}" Z="${p.T}" EndX="${op.x2}" EndY="${op.y2}" EndZ="${p.T}" Depth="${dep}" Width="${op.w}" ToolOffset="中" />`);
+    } else if (op.kind === 'MILL_CIRCLE') {
+      const r = op.d / 2;
+      lines.push(`        <Machining Type="3" IsGenCode="2" Face="${op.face}" X="${op.x}" Y="${op.y - r}" Depth="${dep}" Diameter="0" ToolOffset="Undefined" DeepOffset="0" Pocket="1" Closed="1">`);
+      lines.push(`          <Lines><Line LineID="0" EndX="${op.x + r}" EndY="${op.y}" Angle="-90" /><Line LineID="1" EndX="${op.x}" EndY="${op.y + r}" Angle="-90" /><Line LineID="2" EndX="${op.x - r}" EndY="${op.y}" Angle="-90" /><Line LineID="3" EndX="${op.x}" EndY="${op.y - r}" Angle="-90" /></Lines>`);
+      lines.push(`        </Machining>`);
+    } else {
+      lines.push(`        <Machining Type="3" IsGenCode="2" Face="${op.face}" X="${op.x1}" Y="${op.y1}" Depth="${dep}" Diameter="0" ToolOffset="Undefined" DeepOffset="0" Pocket="0" Closed="0">`);
+      lines.push(`          <Lines><Line LineID="0" EndX="${op.x2}" EndY="${op.y2}" Angle="0" /></Lines>`);
+      lines.push(`        </Machining>`);
+    }
+  });
+  lines.push(`      </Machines>`);
+  lines.push(`      <EdgeGroup X1="0" Y1="0">`);
+  [2, 1, 4, 3].forEach(f => lines.push(`        <Edge Face="${f}" Thickness="${p.edges[f] || 0}" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />`));
+  lines.push(`      </EdgeGroup>`, `    </Panel>`, `  </Panels></Project>`, `</Root>`);
+  return lines.join('\n');
+}
+
+function copyXml() {
+  navigator.clipboard?.writeText(buildXml(parts[selectedIdx]));
+  notify('Skopiowano kod SCX XML do schowka');
+}
+
+// ── TRANSFORMATIONS ──
+function rotate90() {
+  const p = parts[selectedIdx];
+  const oldL = p.L, oldW = p.W;
+  p.L = oldW; p.W = oldL;
+  const fMap = { 1: 4, 4: 2, 2: 3, 3: 1, 5: 5, 6: 6 };
+  p.edges = { 1: p.edges[3], 4: p.edges[1], 2: p.edges[4], 3: p.edges[2] };
+  p.ops.forEach(op => {
+    op.face = fMap[op.face] || op.face;
+    if (op.x !== undefined && op.y !== undefined) {
+      const nx = oldW - op.y, ny = op.x;
+      op.x = Number(nx.toFixed(2)); op.y = Number(ny.toFixed(2));
+    }
+    if (op.x1 !== undefined) {
+      const nx1 = oldW - op.y1, ny1 = op.x1, nx2 = oldW - op.y2, ny2 = op.x2;
+      op.x1 = nx1; op.y1 = ny1; op.x2 = nx2; op.y2 = ny2;
+    }
+    if (op.dir) op.dir = op.dir === 'X' ? 'Y' : 'X';
+    if (op.kind === 'GROOVE_X') op.kind = 'GROOVE_Y';
+    else if (op.kind === 'GROOVE_Y') op.kind = 'GROOVE_X';
+  });
+  p.note = 'Obrót 90° XY';
+  renderAll();
+  notify('Obrócono formatkę o 90° — łapy dopasowane');
+}
+function rotate180() { rotate90(); rotate90(); parts[selectedIdx].note = 'Obrót 180° XY'; renderAll(); }
+function flipTopBottom() {
+  const p = parts[selectedIdx];
+  const fMap = { 1: 2, 2: 1, 3: 3, 4: 4, 5: 6, 6: 5 };
+  p.edges = { 1: p.edges[2], 2: p.edges[1], 3: p.edges[3], 4: p.edges[4] };
+  p.ops.forEach(op => {
+    op.face = fMap[op.face] || op.face;
+    if (op.y !== undefined) op.y = Number((p.W - op.y).toFixed(2));
+    if (op.y1 !== undefined) { op.y1 = p.W - op.y1; op.y2 = p.W - op.y2; }
+    if (op.z !== undefined && op.face >= 1 && op.face <= 4) op.z = Number((p.T - op.z).toFixed(2));
+    if (op.kind === 'LAMELLO' && op.face === 5) op.z = p.T;
+    if (op.kind === 'LAMELLO' && op.face === 6) op.z = 0;
+  });
+  p.note = 'Przerzut Góra ↔ Dół';
+  renderAll();
+  notify('Przerzucono formatkę (Face 5 ↔ Face 6)');
+}
+function mirrorX() {
+  const p = parts[selectedIdx];
+  const fMap = { 1: 1, 2: 2, 3: 4, 4: 3, 5: 5, 6: 6 };
+  p.edges = { 1: p.edges[1], 2: p.edges[2], 3: p.edges[4], 4: p.edges[3] };
+  p.ops.forEach(op => {
+    op.face = fMap[op.face] || op.face;
+    if (op.x !== undefined) op.x = Number((p.L - op.x).toFixed(2));
+    if (op.x1 !== undefined) { op.x1 = p.L - op.x1; op.x2 = p.L - op.x2; }
+  });
+  p.note = 'Lustro X';
+  renderAll();
+  notify('Odbito lustrzanie w osi X');
+}
+function mirrorY() {
+  const p = parts[selectedIdx];
+  const fMap = { 1: 2, 2: 1, 3: 3, 4: 4, 5: 5, 6: 6 };
+  p.edges = { 1: p.edges[2], 2: p.edges[1], 3: p.edges[3], 4: p.edges[4] };
+  p.ops.forEach(op => {
+    op.face = fMap[op.face] || op.face;
+    if (op.y !== undefined) op.y = Number((p.W - op.y).toFixed(2));
+    if (op.y1 !== undefined) { op.y1 = p.W - op.y1; op.y2 = p.W - op.y2; }
+  });
+  p.note = 'Lustro Y';
+  renderAll();
+  notify('Odbito lustrzanie w osi Y');
+}
+function resetCurrent() { parts[selectedIdx] = clone(initialParts[selectedIdx]); resetZoom(false); renderAll(); notify('Przywrócono orientację z STEP'); }
+function autoAlignGrooves() {
+  const p = parts[selectedIdx];
+  if (p.ops.some(o => o.kind === 'GROOVE_Y')) { rotate90(); notify('Dopasowano nutę pod oś X piły'); }
+  else notify('Wszystkie nuty leżą już w osi X piły');
+}
+function exportAll() {
+  const cnt = parts.filter(p => !rules.skipEmpty || p.ops.length > 0).length;
+  notify(`Wygenerowano ${cnt} programów .scx w SCX_NANXING\\`);
+}
+
+function setViewMode(m) {
+  viewMode = m;
+  ['viewAll','viewTop','viewBot'].forEach(id => document.getElementById(id).classList.remove('active'));
+  document.getElementById(m === 'ALL' ? 'viewAll' : (m === 'TOP' ? 'viewTop' : 'viewBot')).classList.add('active');
+  renderCanvas();
+}
+function toggleLayer(k) {
+  layers[k] = !layers[k];
+  document.getElementById(k === 'dims' ? 'btnDims' : 'btnClamps').classList.toggle('active', layers[k]);
+  renderCanvas();
+}
+function setRightTab(t) {
+  rightTab = t;
+  ['tabPropsBtn','tabOpsBtn','tabXmlBtn'].forEach(id => document.getElementById(id).classList.remove('active'));
+  document.getElementById(t === 'PROPS' ? 'tabPropsBtn' : (t === 'OPS' ? 'tabOpsBtn' : 'tabXmlBtn')).classList.add('active');
+  renderInspector();
+}
+
+// ── ZOOM & PAN + LIVE CURSOR COORDS ──
+function resetZoom(doRender = true) { zoom = 1; panX = 0; panY = 0; if (doRender) renderCanvas(); }
+const stage = document.getElementById('vpStage');
+stage.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.12 : 0.89;
+  zoom = Math.max(0.5, Math.min(3.5, zoom * factor));
+  renderCanvas();
+}, { passive: false });
+
+stage.addEventListener('mousedown', e => {
+  if (e.target.closest('[data-op]')) return;
+  isDragging = true;
+  dragStartX = e.clientX - panX;
+  dragStartY = e.clientY - panY;
+});
+window.addEventListener('mouseup', () => { isDragging = false; });
+stage.addEventListener('mousemove', e => {
+  const svg = document.getElementById('cadSvg');
+  const pt = svg.createSVGPoint();
+  pt.x = e.clientX; pt.y = e.clientY;
+  const svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
+  const mx = (svgP.x - lastTransform.ox) / lastTransform.scale;
+  const my = (lastTransform.oy + lastTransform.bh - svgP.y) / lastTransform.scale;
+  document.getElementById('curX').textContent = mx.toFixed(1);
+  document.getElementById('curY').textContent = my.toFixed(1);
+  if (isDragging) {
+    panX = e.clientX - dragStartX;
+    panY = e.clientY - dragStartY;
+    renderCanvas();
+  }
+});
+
+function renderAll() {
+  renderPartsList();
+  renderCanvas();
+  renderInspector();
+}
+
+const DEFAULT_SETTINGS = {
+  openDir: 'D:\\WorkerResource\\ALKATRAS_BSOLID',
+  saveDir: 'D:\\WorkerResource\\NanxingConvertert\\test_out',
+  csvDir: 'D:\\WorkerResource\\ALKATRAS_BSOLID',
+  outSubfolder: 'SCX_NANXING',
+  lamSurfW: 9.8,
+  lamSurfD: 14.0,
+  lamEdgeW: 10.15,
+  lamEdgeD: 14.0,
+  lamLen: 66.0,
+  lamImbusD: 6.0,
+  lamImbusOff: 7.5,
+  tipMaxDia: 12.5,
+  maxSideDepth: 50.0,
+  noBotAllow: 2.0,
+  incPartial: false,
+  swapD11: false,
+  autoFlip: true,
+  skipEmpty: true,
+  sawThick: 4.0,
+  grooveDefW: 6.0,
+  toolOffset: '中',
+  botSpindle: 12.0,
+  minWidth: 45.0,
+  pinchWidth: 100.0,
+  checkClamps: true,
+  shortQrId: true
+};
+
+let appSettings = Object.assign({}, DEFAULT_SETTINGS, JSON.parse(localStorage.getItem('nx_settings_v1') || '{}'));
+
+function populateSettingsForm() {
+  for (const [k, v] of Object.entries(appSettings)) {
+    const el = document.getElementById('cfg_' + k);
+    if (!el) continue;
+    if (el.type === 'checkbox') el.checked = !!v;
+    else el.value = v;
+  }
+}
+
+function openSettings() {
+  populateSettingsForm();
+  document.getElementById('settingsModal').classList.add('open');
+}
+
+function closeSettings() {
+  document.getElementById('settingsModal').classList.remove('open');
+}
+
+function switchSettingsCat(cat, btn) {
+  document.querySelectorAll('.snav-item').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.scat-pane').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('scat_' + cat).classList.add('active');
+}
+
+function saveSettings() {
+  for (const k of Object.keys(DEFAULT_SETTINGS)) {
+    const el = document.getElementById('cfg_' + k);
+    if (!el) continue;
+    if (el.type === 'checkbox') appSettings[k] = el.checked;
+    else if (typeof DEFAULT_SETTINGS[k] === 'number') appSettings[k] = parseFloat(el.value) || DEFAULT_SETTINGS[k];
+    else appSettings[k] = el.value;
+  }
+  localStorage.setItem('nx_settings_v1', JSON.stringify(appSettings));
+  closeSettings();
+  renderInspector();
+  notify('Zapisano ustawienia (nanxing_config.ini)');
+}
+
+function resetSettings() {
+  appSettings = Object.assign({}, DEFAULT_SETTINGS);
+  populateSettingsForm();
+  notify('Przywrócono domyślne parametry');
+}
+
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeSettings();
+});
+
+renderAll();
+</script>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-backdrop" id="settingsModal" onclick="if(event.target===this) closeSettings()">
+  <div class="settings-modal">
+    <div class="modal-hdr">
+      <div class="modal-title">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Ustawienia — NanxingConvertert
+      </div>
+      <button class="modal-close" onclick="closeSettings()" title="Zamknij (Esc)">×</button>
+    </div>
+
+    <div class="settings-split">
+      <nav class="settings-nav">
+        <button class="snav-item active" onclick="switchSettingsCat('paths', this)">
+          <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          Ścieżki domyślne
+        </button>
+        <button class="snav-item" onclick="switchSettingsCat('lamello', this)">
+          <svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="4"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          Lamello P14
+        </button>
+        <button class="snav-item" onclick="switchSettingsCat('drilling', this)">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/></svg>
+          Wiercenie i B-Rep
+        </button>
+        <button class="snav-item" onclick="switchSettingsCat('milling', this)">
+          <svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><rect x="6" y="7" width="12" height="10" rx="1"/></svg>
+          Nutowanie i Frezowanie
+        </button>
+        <button class="snav-item" onclick="switchSettingsCat('machine', this)">
+          <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Maszyna i Limity
+        </button>
+      </nav>
+
+      <div class="settings-body">
+        <!-- 1. PATHS -->
+        <div class="scat-pane active" id="scat_paths">
+          <div class="scat-title">Ścieżki domyślne</div>
+          <div class="scat-desc">Katalogi startowe do szybkiego otwierania plików STEP/CSV i eksportu programów SCX.</div>
+          <div class="cfg-grid">
+            <div class="cfg-field full">
+              <label class="cfg-label"><span>Domyślny folder otwierania STEP</span></label>
+              <div class="path-row">
+                <input class="cfg-input" id="cfg_openDir" type="text" />
+                <button class="btn" onclick="notify('Wybór katalogu dostępny w aplikacji desktopowej')">Przeglądaj...</button>
+              </div>
+            </div>
+            <div class="cfg-field full">
+              <label class="cfg-label"><span>Domyślny folder zapisu SCX</span><span class="cfg-unit">puste = podfolder obok STEP</span></label>
+              <div class="path-row">
+                <input class="cfg-input" id="cfg_saveDir" type="text" />
+                <button class="btn" onclick="notify('Wybór katalogu dostępny w aplikacji desktopowej')">Przeglądaj...</button>
+              </div>
+            </div>
+            <div class="cfg-field full">
+              <label class="cfg-label"><span>Domyślny folder plików CSV (rozkroju / obrzeży)</span></label>
+              <div class="path-row">
+                <input class="cfg-input" id="cfg_csvDir" type="text" />
+                <button class="btn" onclick="notify('Wybór katalogu dostępny w aplikacji desktopowej')">Przeglądaj...</button>
+              </div>
+            </div>
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Nazwa podfolderu wyjściowego</span></label>
+              <input class="cfg-input" id="cfg_outSubfolder" type="text" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. LAMELLO P14 -->
+        <div class="scat-pane" id="scat_lamello">
+          <div class="scat-title">Lamello P14 (Type="1002")</div>
+          <div class="scat-desc">Domyślne wymiary gniazd przypisywane podczas generowania .scx (dla powierzchni Face 5 oraz krawędzi Face 1–4).</div>
+          <div class="cfg-grid">
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Szerokość — powierzchnia (Face 5)</span><span class="cfg-unit">mm</span></label>
+              <input class="cfg-input" id="cfg_lamSurfW" type="number" step="0.05" />
+            </div>
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Głębokość — powierzchnia (Face 5)</span><span class="cfg-unit">mm</span></label>
+              <input class="cfg-input" id="cfg_lamSurfD" type="number" step="0.1" />
+            </div>
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Szerokość — krawędź (Face 1–4)</span><span class="cfg-unit">mm</span></label>
+              <input class="cfg-input" id="cfg_lamEdgeW" type="number" step="0.05" />
+            </div>
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Głębokość — krawędź (Face 1–4)</span><span class="cfg-unit">mm</span></label>
+              <input class="cfg-input" id="cfg_lamEdgeD" type="number" step="0.1" />
+            </div>
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Długość gniazda P14</span><span class="cfg-unit">mm</span></label>
+              <input class="cfg-input" id="cfg_lamLen" type="number" step="0.5" />
+            </div>
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Średnica otworu pod imbus</span><span class="cfg-unit">mm</span></label>
+              <input class="cfg-input" id="cfg_lamImbusD" type="number" step="0.5" />
+            </div>
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Odsunięcie imbusa od krawędzi</span><span class="cfg-unit">mm</span></label>
+              <input class="cfg-input" id="cfg_lamImbusOff" type="number" step="0.5" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. DRILLING -->
+        <div class="scat-pane" id="scat_drilling">
+          <div class="scat-title">Wiercenie i analiza B-Rep</div>
+          <div class="scat-desc">Parametry technologiczne wierceń pionowych i poziomych odczytywanych z modelu 3D STEP.</div>
+          <div class="cfg-grid">
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Kompensacja stożka 118° do średnicy</span><span class="cfg-unit">mm</span></label>
+              <input class="cfg-input" id="cfg_tipMaxDia" type="number" step="0.5" />
+            </div>
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Maks. głębokość wiercenia bocznego</span><span class="cfg-unit">mm</span></label>
+              <input class="cfg-input" id="cfg_maxSideDepth" type="number" step="1" />
+            </div>
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Naddatek poziomy bez płaskiego dna</span><span class="cfg-unit">mm</span></label>
+              <input class="cfg-input" id="cfg_noBotAllow" type="number" step="0.5" />
+            </div>
+          </div>
+          <div class="cfg-toggle-list">
+            <label class="cfg-toggle-row">
+              <span>Uwzględniaj częściowe otwory (&lt; 360°)</span>
+              <input type="checkbox" id="cfg_incPartial" />
+            </label>
+            <label class="cfg-toggle-row">
+              <span>Zamieniaj gzymki Ø11 na Ø12</span>
+              <input type="checkbox" id="cfg_swapD11" />
+            </label>
+            <label class="cfg-toggle-row">
+              <span>Automatyczny obrót góra/dół (oś Y)</span>
+              <input type="checkbox" id="cfg_autoFlip" />
+            </label>
+            <label class="cfg-toggle-row">
+              <span>Pomijaj puste formatki bez operacji</span>
+              <input type="checkbox" id="cfg_skipEmpty" />
+            </label>
+          </div>
+        </div>
+
+        <!-- 4. MILLING & GROOVE -->
+        <div class="scat-pane" id="scat_milling">
+          <div class="scat-title">Nutowanie i Frezowanie</div>
+          <div class="scat-desc">Konfiguracja piły w osi X (Type="4") oraz górnego/dolnego wrzeciona (Type="3").</div>
+          <div class="cfg-grid">
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Grubość fizycznej tarczy piły</span><span class="cfg-unit">mm</span></label>
+              <input class="cfg-input" id="cfg_sawThick" type="number" step="0.5" />
+            </div>
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Domyślna szerokość nuta</span><span class="cfg-unit">mm</span></label>
+              <input class="cfg-input" id="cfg_grooveDefW" type="number" step="0.5" />
+            </div>
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Domyślna kompensacja ToolOffset</span></label>
+              <select class="cfg-select" id="cfg_toolOffset">
+                <option value="中">中 — Środek linii</option>
+                <option value="左">左 — Lewa strona</option>
+                <option value="右">右 — Prawa strona</option>
+              </select>
+            </div>
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Stały frez na dolnym wrzecionie (F6)</span><span class="cfg-unit">mm</span></label>
+              <input class="cfg-input" id="cfg_botSpindle" type="number" step="1" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. MACHINE & SAFETY -->
+        <div class="scat-pane" id="scat_machine">
+          <div class="scat-title">Maszyna i Limity bezpieczeństwa</div>
+          <div class="scat-desc">Limity zgodne z parametrami CNC wiertarki Nanxing (Pr90011, Pr90056) oraz formatem kodów QR.</div>
+          <div class="cfg-grid">
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Minimalna szerokość formatki (Pr90011)</span><span class="cfg-unit">mm</span></label>
+              <input class="cfg-input" id="cfg_minWidth" type="number" step="1" />
+            </div>
+            <div class="cfg-field">
+              <label class="cfg-label"><span>Próg ostrzeżenia łap (Pr90056)</span><span class="cfg-unit">mm</span></label>
+              <input class="cfg-input" id="cfg_pinchWidth" type="number" step="5" />
+            </div>
+          </div>
+          <div class="cfg-toggle-list">
+            <label class="cfg-toggle-row">
+              <span>Kontroluj podparcie obu górnych łap zaciskowych</span>
+              <input type="checkbox" id="cfg_checkClamps" />
+            </label>
+            <label class="cfg-toggle-row">
+              <span>Skrócone ID pod skaner kodów kreskowych / QR (np. S05_46)</span>
+              <input type="checkbox" id="cfg_shortQrId" />
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn ghost" onclick="resetSettings()">Przywróć domyślne</button>
+      <div class="modal-footer-right">
+        <button class="btn" onclick="closeSettings()">Anuluj</button>
+        <button class="btn primary" onclick="saveSettings()">Zapisz ustawienia</button>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

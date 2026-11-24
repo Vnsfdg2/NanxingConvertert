@@ -1,0 +1,7 @@
+/target
+**/*.rs.bk
+*.pdb
+SCX_NANXING/
+test_out/
+test_out_skos/
+nanxing_config.ini

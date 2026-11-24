@@ -1,0 +1,16 @@
+[package]
+name = "nanxing-app"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "nanxing-converter"
+path = "src/main.rs"
+
+[dependencies]
+nanxing-core = { path = "../nanxing-core" }
+eframe.workspace = true
+egui.workspace = true
+rfd.workspace = true
+anyhow.workspace = true
