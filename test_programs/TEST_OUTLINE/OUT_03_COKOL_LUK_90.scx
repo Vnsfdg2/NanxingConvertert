@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Root Cad="BuiltInCad" version="2.0">
+  <Project>
+    <Panels>
+      <Panel IsProduce="true" ID="OUT_03_COKOL_LUK_90" Name="OUT_03_COKOL_LUK_90" Length="500" Width="300" Thickness="18" MachiningPoint="1">
+        <Outline>
+          <Point X="500" Y="300" />
+          <Point X="0" Y="300" />
+          <Point X="0" Y="35" />
+          <Point X="85" Y="35" />
+          <Point X="85" Y="35" />
+          <Point X="87.6" Y="34.77" />
+          <Point X="90.13" Y="34.1" />
+          <Point X="92.5" Y="32.99" />
+          <Point X="94.64" Y="31.49" />
+          <Point X="96.49" Y="29.64" />
+          <Point X="97.99" Y="27.5" />
+          <Point X="99.1" Y="25.13" />
+          <Point X="99.77" Y="22.6" />
+          <Point X="100" Y="20" />
+          <Point X="100" Y="0" />
+          <Point X="500" Y="0" />
+        </Outline>
+        <Innerlines />
+        <Machines />
+        <EdgeGroup X1="0" Y1="0">
+          <Edge Face="1" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="2" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="3" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="4" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+        </EdgeGroup>
+      </Panel>
+    </Panels>
+  </Project>
+</Root>

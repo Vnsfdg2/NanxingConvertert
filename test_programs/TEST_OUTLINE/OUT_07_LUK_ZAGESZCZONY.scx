@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Root Cad="BuiltInCad" version="2.0">
+  <Project>
+    <Panels>
+      <Panel IsProduce="true" ID="OUT_07_LUK_ZAGESZCZONY" Name="OUT_07_LUK_ZAGESZCZONY" Length="500" Width="300" Thickness="18" MachiningPoint="1">
+        <Outline>
+          <Point X="500" Y="180" />
+          <Point X="500" Y="180" />
+          <Point X="499.54" Y="190.46" />
+          <Point X="498.18" Y="200.84" />
+          <Point X="495.91" Y="211.06" />
+          <Point X="492.76" Y="221.04" />
+          <Point X="488.76" Y="230.71" />
+          <Point X="483.92" Y="240" />
+          <Point X="478.3" Y="248.83" />
+          <Point X="471.93" Y="257.13" />
+          <Point X="464.85" Y="264.85" />
+          <Point X="457.13" Y="271.93" />
+          <Point X="448.83" Y="278.3" />
+          <Point X="440" Y="283.92" />
+          <Point X="430.71" Y="288.76" />
+          <Point X="421.04" Y="292.76" />
+          <Point X="411.06" Y="295.91" />
+          <Point X="400.84" Y="298.18" />
+          <Point X="390.46" Y="299.54" />
+          <Point X="380" Y="300" />
+          <Point X="0" Y="300" />
+          <Point X="0" Y="0" />
+          <Point X="500" Y="0" />
+        </Outline>
+        <Innerlines />
+        <Machines />
+        <EdgeGroup X1="0" Y1="0">
+          <Edge Face="1" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="2" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="3" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="4" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+        </EdgeGroup>
+      </Panel>
+    </Panels>
+  </Project>
+</Root>

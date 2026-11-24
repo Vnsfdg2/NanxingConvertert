@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Root Cad="BuiltInCad" version="2.0">
+  <Project>
+    <Panels>
+      <Panel IsProduce="true" ID="OUT_09_ZNACZNIK_TROJKAT" Name="OUT_09_ZNACZNIK_TROJKAT" Length="500" Width="300" Thickness="18" MachiningPoint="1">
+        <Outline>
+          <Point X="500" Y="300" />
+          <Point X="0" Y="300" />
+          <Point X="0" Y="170" />
+          <Point X="12" Y="150" />
+          <Point X="0" Y="130" />
+          <Point X="0" Y="0" />
+          <Point X="500" Y="0" />
+          <Point X="500" Y="130" />
+          <Point X="488" Y="150" />
+          <Point X="500" Y="170" />
+        </Outline>
+        <Innerlines />
+        <Machines />
+        <EdgeGroup X1="0" Y1="0">
+          <Edge Face="1" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="2" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="3" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="4" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+        </EdgeGroup>
+      </Panel>
+    </Panels>
+  </Project>
+</Root>

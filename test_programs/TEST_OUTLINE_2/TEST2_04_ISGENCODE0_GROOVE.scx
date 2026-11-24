@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Root Cad="BuiltInCad" version="2.0">
+  <Project>
+    <Panels>
+      <Panel IsProduce="true" ID="TEST2_04_ISGENCODE0_GROOVE" Name="TEST2_04_ISGENCODE0_GROOVE" Length="500" Width="300" Thickness="18" MachiningPoint="1">
+        <Outline>
+          <Point X="500" Y="300" />
+          <Point X="0" Y="300" />
+          <Point X="0" Y="0" />
+          <Point X="500" Y="0" />
+        </Outline>
+        <Innerlines />
+        <Machines>
+          <Machining Type="4" IsGenCode="0" Face="5" X="15" Y="15" Z="18" EndX="15" EndY="285" EndZ="18" Depth="1" Width="8" ToolOffset="中" />
+        </Machines>
+        <EdgeGroup X1="0" Y1="0">
+          <Edge Face="1" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="2" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="3" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="4" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+        </EdgeGroup>
+      </Panel>
+    </Panels>
+  </Project>
+</Root>

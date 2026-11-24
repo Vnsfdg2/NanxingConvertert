@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Root Cad="BuiltInCad" version="2.0">
+  <Project>
+    <Panels>
+      <Panel IsProduce="true" ID="TEST2_03_ISGENCODE0_MILL" Name="TEST2_03_ISGENCODE0_MILL" Length="500" Width="300" Thickness="18" MachiningPoint="1">
+        <Outline>
+          <Point X="500" Y="300" />
+          <Point X="0" Y="300" />
+          <Point X="0" Y="0" />
+          <Point X="500" Y="0" />
+        </Outline>
+        <Innerlines />
+        <Machines>
+          <Machining Type="3" IsGenCode="0" Face="5" X="12" Y="15" Depth="1" Diameter="0" ToolOffset="Undefined" DeepOffset="0" Pocket="0" Closed="0">
+            <MillPreDefinedRectangle Length="0" Width="0" X="0" Y="0" Z="0" Radius="0" CornerBotLeft="0" CornerBotRight="0" CornerTopLeft="0" CornerTopRight="0" />
+            <Lines>
+              <Line LineID="0" EndX="12" EndY="285" Angle="0" />
+              <Line LineID="1" EndX="25" EndY="270" Angle="0" />
+            </Lines>
+          </Machining>
+          <Machining Type="3" IsGenCode="0" Face="6" X="488" Y="15" Depth="1" Diameter="0" ToolOffset="Undefined" DeepOffset="0" Pocket="0" Closed="0">
+            <MillPreDefinedRectangle Length="0" Width="0" X="0" Y="0" Z="0" Radius="0" CornerBotLeft="0" CornerBotRight="0" CornerTopLeft="0" CornerTopRight="0" />
+            <Lines>
+              <Line LineID="0" EndX="488" EndY="285" Angle="0" />
+            </Lines>
+          </Machining>
+        </Machines>
+        <EdgeGroup X1="0" Y1="0">
+          <Edge Face="1" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="2" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="3" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="4" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+        </EdgeGroup>
+      </Panel>
+    </Panels>
+  </Project>
+</Root>

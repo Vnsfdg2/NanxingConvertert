@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Root Cad="BuiltInCad" version="2.0">
+  <Project>
+    <Panels>
+      <Panel IsProduce="true" ID="OUT_11_WYCIECIE_POLKOLE" Name="OUT_11_WYCIECIE_POLKOLE" Length="500" Width="300" Thickness="18" MachiningPoint="1">
+        <Outline>
+          <Point X="500" Y="300" />
+          <Point X="295" Y="300" />
+          <Point X="295" Y="300" />
+          <Point X="294.32" Y="292.19" />
+          <Point X="292.29" Y="284.61" />
+          <Point X="288.97" Y="277.5" />
+          <Point X="284.47" Y="271.07" />
+          <Point X="278.93" Y="265.53" />
+          <Point X="272.5" Y="261.03" />
+          <Point X="265.39" Y="257.71" />
+          <Point X="257.81" Y="255.68" />
+          <Point X="250" Y="255" />
+          <Point X="242.19" Y="255.68" />
+          <Point X="234.61" Y="257.71" />
+          <Point X="227.5" Y="261.03" />
+          <Point X="221.07" Y="265.53" />
+          <Point X="215.53" Y="271.07" />
+          <Point X="211.03" Y="277.5" />
+          <Point X="207.71" Y="284.61" />
+          <Point X="205.68" Y="292.19" />
+          <Point X="205" Y="300" />
+          <Point X="205" Y="300" />
+          <Point X="0" Y="300" />
+          <Point X="0" Y="0" />
+          <Point X="500" Y="0" />
+        </Outline>
+        <Innerlines />
+        <Machines />
+        <EdgeGroup X1="0" Y1="0">
+          <Edge Face="1" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="2" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="3" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="4" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+        </EdgeGroup>
+      </Panel>
+    </Panels>
+  </Project>
+</Root>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Root Cad="BuiltInCad" version="2.0">
+  <Project>
+    <Panels>
+      <Panel IsProduce="true" ID="QR_EDGE_PARAMS" Name="Edge_Params" Length="500" Width="300" Thickness="18" MachiningPoint="1">
+        <Outline>
+          <Point X="500" Y="300" />
+          <Point X="0" Y="300" />
+          <Point X="0" Y="0" />
+          <Point X="500" Y="0" />
+        </Outline>
+        <Innerlines />
+        <Machines />
+        <EdgeGroup X1="10" Y1="10">
+          <Edge Face="1" Thickness="0.8" Pre_Milling="1" X="50" Y="0" CentralAngle="0" />
+          <Edge Face="2" Thickness="2" Pre_Milling="1" X="0" Y="50" CentralAngle="45" />
+          <Edge Face="3" Thickness="0.8" Pre_Milling="0" X="0" Y="0" CentralAngle="90" />
+          <Edge Face="4" Thickness="2" Pre_Milling="0" X="20" Y="20" CentralAngle="0" />
+        </EdgeGroup>
+      </Panel>
+    </Panels>
+  </Project>
+</Root>

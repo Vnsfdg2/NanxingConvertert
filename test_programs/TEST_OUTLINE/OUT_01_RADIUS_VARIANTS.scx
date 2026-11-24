@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Root Cad="BuiltInCad" version="2.0">
+  <Project>
+    <Panels>
+      <Panel IsProduce="true" ID="OUT_01_RADIUS_VARIANTS" Name="OUT_01_RADIUS_VARIANTS" Length="500" Width="300" Thickness="18" MachiningPoint="1">
+        <Outline>
+          <Point X="500" Y="240" />
+          <Point X="440" Y="300" Radius="60" />
+          <Point X="60" Y="300" />
+          <Point X="0" Y="240" Radius2="60" />
+          <Point X="0" Y="60" />
+          <Point X="60" Y="0" Radius="-60" />
+          <Point X="440" Y="0" />
+          <Point X="500" Y="60" Angle="-90" />
+        </Outline>
+        <Innerlines />
+        <Machines />
+        <EdgeGroup X1="0" Y1="0">
+          <Edge Face="1" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="2" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="3" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+          <Edge Face="4" Thickness="0" Pre_Milling="0" X="0" Y="0" CentralAngle="0" />
+        </EdgeGroup>
+      </Panel>
+    </Panels>
+  </Project>
+</Root>
