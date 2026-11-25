@@ -1,11 +1,12 @@
 use crate::settings::{SettingsAction, SettingsCategory, SettingsDialogState};
 use crate::theme::*;
-use crate::viewport::{Selection, ViewMode, ViewportState, draw_cad_viewport};
+use crate::viewport::{Selection, ViewMode, ViewportAction, ViewportState, draw_cad_viewport};
 use egui::{Color32, CornerRadius, Frame, Key, Margin, RichText, ScrollArea, Stroke, Vec2};
 use nanxing_core::config::AppConfig;
 use nanxing_core::csv_edges::apply_csv_edges_from_file;
 use nanxing_core::model::{Operation, PanelProgram};
 use nanxing_core::scx_writer::render_scx_xml;
+use nanxing_core::transforms::format_transforms_chip;
 use nanxing_core::{LoadedStepPanel, format_num, load_step_panel, save_program_scx};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -87,10 +88,14 @@ impl NanxingStudioApp {
         }
     }
 
+    fn is_panel_skipped(&self, p: &LoadedStepPanel) -> bool {
+        p.manual_skip || (self.cfg.skip_empty_panels && p.program.operations.is_empty())
+    }
+
     fn exportable_count(&self) -> usize {
         self.panels
             .iter()
-            .filter(|p| !self.cfg.skip_empty_panels || !p.program.operations.is_empty())
+            .filter(|p| !self.is_panel_skipped(p))
             .count()
     }
 
@@ -244,6 +249,10 @@ impl NanxingStudioApp {
             self.set_status("Brak wybranej formatki do zapisu");
             return;
         };
+        if panel.manual_skip {
+            self.set_status("Pominięto — formatka oznaczona jako pomijana");
+            return;
+        }
         let out_dir = self.output_dir_for_panel(panel);
         match save_program_scx(
             &panel.program,
@@ -269,6 +278,10 @@ impl NanxingStudioApp {
         for panel in &self.panels {
             let out_dir = self.output_dir_for_panel(panel);
             last_dir = out_dir.clone();
+            if panel.manual_skip {
+                skipped += 1;
+                continue;
+            }
             match save_program_scx(
                 &panel.program,
                 &panel.file_stem,
@@ -284,7 +297,7 @@ impl NanxingStudioApp {
             }
         }
         self.set_status(format!(
-            "Zapisano {saved} plików SCX → {} (pominięte puste: {skipped})",
+            "Zapisano {saved} plików SCX → {} (pominięte: {skipped})",
             last_dir.display()
         ));
     }
@@ -458,26 +471,16 @@ impl NanxingStudioApp {
                         }
                     });
 
-                    ui.menu_button("Maszyna", |ui| {
-                        if ui.button("Ustawienia…   Ctrl+,").clicked() {
-                            ui.close_menu();
-                            self.settings_dlg
-                                .open_with(&self.cfg, SettingsCategory::Lamello);
-                        }
-                        if ui.button("Domyślne ścieżki…").clicked() {
-                            ui.close_menu();
-                            self.settings_dlg
-                                .open_with(&self.cfg, SettingsCategory::Paths);
-                        }
-                        ui.separator();
-                        if ui.button("Przywróć ustawienia fabryczne").clicked() {
-                            ui.close_menu();
-                            self.cfg = AppConfig::default();
-                            self.redetect_all();
-                            self.save_config();
-                            self.set_status("Przywrócono ustawienia domyślne Nanxing");
-                        }
-                    });
+                    // Bezpośredni przycisk Ustawienia (zastępuje kaskadowe menu Maszyna)
+                    if ui
+                        .button("Ustawienia")
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text("Otwórz okno ustawień z grupami (Ctrl+,)")
+                        .clicked()
+                    {
+                        self.settings_dlg
+                            .open_with(&self.cfg, SettingsCategory::Paths);
+                    }
 
                     ui.menu_button("Narzędzia", |ui| {
                         if ui.button("Przelicz B-Rep   F5").clicked() {
@@ -542,19 +545,14 @@ impl NanxingStudioApp {
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if toolbar_btn(ui, "⚙ Ustawienia", false)
-                            .on_hover_text("Ustawienia programu i domyślne ścieżki (Ctrl+,)")
-                            .clicked()
-                        {
-                            self.settings_dlg
-                                .open_with(&self.cfg, SettingsCategory::Paths);
-                        }
-                        ui.separator();
-                        ui.label(
-                            RichText::new(&self.active_folder_path)
-                                .monospace()
-                                .size(11.0_f32)
-                                .color(TX_3),
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(&self.active_folder_path)
+                                    .monospace()
+                                    .size(11.0_f32)
+                                    .color(TX_3),
+                            )
+                            .truncate(),
                         );
                     });
                 });
@@ -618,11 +616,17 @@ impl NanxingStudioApp {
     }
 
     fn draw_left_panel(&mut self, ctx: &egui::Context) {
+        const LEFT_W: f32 = 288.0;
         egui::SidePanel::left("left_panel")
-            .exact_width(288.0_f32)
+            .exact_width(LEFT_W)
+            .min_width(LEFT_W)
+            .max_width(LEFT_W)
             .resizable(false)
             .frame(Frame::NONE.fill(BG_1).stroke(Stroke::new(1.0_f32, LINE)))
             .show(ctx, |ui| {
+                ui.set_width(LEFT_W);
+                ui.set_max_width(LEFT_W);
+
                 let q = self.search_query.trim().to_lowercase();
                 let matching_indices: Vec<usize> = self
                     .panels
@@ -657,11 +661,17 @@ impl NanxingStudioApp {
                     .stroke(Stroke::new(1.0_f32, LINE))
                     .inner_margin(Margin::symmetric(10, 8))
                     .show(ui, |ui| {
+                        ui.set_max_width(LEFT_W - 20.0_f32);
                         ui.horizontal(|ui| {
+                            let search_w = if self.search_query.is_empty() {
+                                ui.available_width()
+                            } else {
+                                (ui.available_width() - 24.0_f32).max(80.0_f32)
+                            };
                             ui.add(
                                 egui::TextEdit::singleline(&mut self.search_query)
                                     .hint_text("Szukaj formatki, ID…")
-                                    .desired_width(ui.available_width() - 24.0),
+                                    .desired_width(search_w),
                             );
                             if !self.search_query.is_empty() && ui.small_button("✕").clicked() {
                                 self.search_query.clear();
@@ -671,167 +681,299 @@ impl NanxingStudioApp {
 
                 let exportable = self.exportable_count();
                 let list_h = (ui.available_height() - 28.0).max(80.0);
-                ScrollArea::vertical().max_height(list_h).show(ui, |ui| {
-                    ui.spacing_mut().item_spacing = Vec2::ZERO;
-                    if matching_indices.is_empty() {
-                        ui.add_space(24.0_f32);
-                        ui.vertical_centered(|ui| {
-                            let txt = if self.panels.is_empty() {
-                                "Brak wczytanych plików STEP"
-                            } else {
-                                "Brak wyników"
-                            };
-                            ui.label(RichText::new(txt).color(TX_3));
-                        });
-                    }
-                    for idx in matching_indices {
-                        let loaded = &self.panels[idx];
-                        let prog = &loaded.program;
-                        let is_sel = idx == self.selected_idx;
-                        let is_empty = prog.operations.is_empty();
+                ScrollArea::vertical()
+                    .id_salt("left_panels_scroll")
+                    .max_height(list_h)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        let row_outer_w = ui.available_width().min(LEFT_W);
+                        ui.set_max_width(row_outer_w);
+                        ui.spacing_mut().item_spacing = Vec2::ZERO;
 
-                        let row_bg = if is_sel { BG_SEL } else { BG_1 };
-                        let resp = Frame::NONE
-                            .fill(row_bg)
-                            .inner_margin(Margin::symmetric(12, 8))
-                            .show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                ui.spacing_mut().item_spacing.y = 3.0_f32;
+                        if matching_indices.is_empty() {
+                            ui.add_space(24.0_f32);
+                            ui.vertical_centered(|ui| {
+                                let txt = if self.panels.is_empty() {
+                                    "Brak wczytanych plików STEP"
+                                } else {
+                                    "Brak wyników"
+                                };
+                                ui.label(RichText::new(txt).color(TX_3));
+                            });
+                        }
+                        let mut toggle_skip_idx: Option<usize> = None;
+                        for idx in matching_indices {
+                            let loaded = &self.panels[idx];
+                            let prog = &loaded.program;
+                            let is_sel = idx == self.selected_idx;
+                            let is_empty = prog.operations.is_empty();
+                            let man_skip = loaded.manual_skip;
+                            let xf_chip = format_transforms_chip(&loaded.user_transforms);
 
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        RichText::new(&prog.name)
-                                            .monospace()
-                                            .size(11.5_f32)
-                                            .color(if is_empty { TX_2 } else { TX }),
-                                    );
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |ui| {
-                                            ui.label(
-                                                RichText::new(format!("{:02}", idx + 1))
-                                                    .monospace()
-                                                    .size(10.5_f32)
-                                                    .color(TX_3),
-                                            );
-                                        },
-                                    );
-                                });
+                            let row_bg = if is_sel { BG_SEL } else { BG_1 };
+                            let inner_w = (row_outer_w - 24.0_f32).max(160.0_f32);
+                            let mut skip_btn_rect = egui::Rect::NOTHING;
 
-                                ui.label(
-                                    RichText::new(format!(
-                                        "{} × {} × {} mm  ·  ID: {}",
-                                        format_num(prog.length),
-                                        format_num(prog.width),
-                                        format_num(prog.thickness),
-                                        prog.id
-                                    ))
-                                    .monospace()
-                                    .size(10.5_f32)
-                                    .color(TX_2),
-                                );
+                            let resp = Frame::NONE
+                                .fill(row_bg)
+                                .inner_margin(Margin::symmetric(12, 8))
+                                .show(ui, |ui| {
+                                    ui.set_width(inner_w);
+                                    ui.set_max_width(inner_w);
+                                    ui.spacing_mut().item_spacing.y = 3.0_f32;
 
-                                ui.horizontal(|ui| {
-                                    ui.label(RichText::new("■").size(7.0_f32).color(OK));
-                                    let orient = if prog.flipped_top_bottom {
-                                        "Auto-obrót Góra↔Dół (oś Y)"
-                                    } else {
-                                        "Orientacja bazowa"
-                                    };
-                                    ui.label(RichText::new(orient).size(10.5_f32).color(TX_3));
-                                });
-
-                                for w in &prog.warnings {
                                     ui.horizontal(|ui| {
-                                        ui.label(RichText::new("■").size(7.0_f32).color(WARN));
-                                        ui.label(RichText::new(w).size(10.0_f32).color(WARN));
-                                    });
-                                }
-
-                                ui.add_space(2.0_f32);
-                                ui.horizontal_wrapped(|ui| {
-                                    ui.spacing_mut().item_spacing = Vec2::new(4.0, 3.0);
-                                    if is_empty {
-                                        let lbl = if self.cfg.skip_empty_panels {
-                                            "Pusta · pomijana przy eksporcie"
-                                        } else {
-                                            "Pusta · eksportowana"
-                                        };
-                                        draw_flat_tag(ui, lbl, TX_3);
-                                    } else {
-                                        let drills = prog
-                                            .operations
-                                            .iter()
-                                            .filter(|o| {
-                                                matches!(
-                                                    o,
-                                                    Operation::VerticalDrill { .. }
-                                                        | Operation::HorizontalDrill { .. }
-                                                )
-                                            })
-                                            .count();
-                                        let lams = prog
-                                            .operations
-                                            .iter()
-                                            .filter(|o| matches!(o, Operation::LamelloP14 { .. }))
-                                            .count();
-                                        let grooves = prog
-                                            .operations
-                                            .iter()
-                                            .filter(|o| matches!(o, Operation::Groove { .. }))
-                                            .count();
-                                        if drills > 0 {
-                                            draw_flat_tag(
-                                                ui,
-                                                &format!("Wiercenia {drills}"),
-                                                COL_VDRILL,
-                                            );
-                                        }
-                                        if lams > 0 {
-                                            draw_flat_tag(
-                                                ui,
-                                                &format!("Lamello P14 ×{lams}"),
-                                                COL_LAMELLO,
-                                            );
-                                        }
-                                        if grooves > 0 {
-                                            draw_flat_tag(
-                                                ui,
-                                                &format!("Nuta ×{grooves}"),
-                                                COL_GROOVE,
-                                            );
-                                        }
-                                    }
-                                    let ec = prog.edges.active_count();
-                                    if ec > 0 {
-                                        draw_flat_tag(
-                                            ui,
-                                            &format!("Obrzeża CSV {ec}/4"),
-                                            COL_EDGE,
+                                        let name_w = (inner_w - 86.0_f32).max(80.0_f32);
+                                        ui.allocate_ui_with_layout(
+                                            Vec2::new(name_w, 18.0_f32),
+                                            egui::Layout::left_to_right(egui::Align::Center),
+                                            |ui| {
+                                                let mut title_rt = RichText::new(&prog.name)
+                                                    .monospace()
+                                                    .size(11.5_f32)
+                                                    .color(if man_skip || is_empty {
+                                                        TX_3
+                                                    } else {
+                                                        TX
+                                                    });
+                                                if man_skip {
+                                                    title_rt = title_rt.strikethrough();
+                                                }
+                                                ui.add(egui::Label::new(title_rt).truncate());
+                                            },
                                         );
+
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                ui.spacing_mut().item_spacing.x = 6.0_f32;
+                                                ui.label(
+                                                    RichText::new(format!("{:02}", idx + 1))
+                                                        .monospace()
+                                                        .size(10.5_f32)
+                                                        .color(TX_3),
+                                                );
+
+                                                // Przycisk ręcznego pomijania formatki
+                                                let btn_txt =
+                                                    if man_skip { "Pomijana" } else { "Pomiń" };
+                                                let btn_w = if man_skip { 58.0_f32 } else { 44.0_f32 };
+                                                let (b_rect, b_resp) = ui.allocate_exact_size(
+                                                    Vec2::new(btn_w, 17.0_f32),
+                                                    egui::Sense::click(),
+                                                );
+                                                skip_btn_rect = b_rect;
+                                                let b_resp = b_resp
+                                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                                    .on_hover_text(if man_skip {
+                                                        "Formatka pomijana — kliknij, aby włączyć ponownie"
+                                                    } else {
+                                                        "Kliknij, aby pominąć tę formatkę"
+                                                    });
+                                                let (bfill, bstroke, bfg) = if man_skip {
+                                                    (
+                                                        Color32::from_rgb(42, 33, 18),
+                                                        WARN,
+                                                        WARN,
+                                                    )
+                                                } else if b_resp.hovered() {
+                                                    (
+                                                        Color32::from_rgb(32, 36, 40),
+                                                        WARN,
+                                                        TX,
+                                                    )
+                                                } else {
+                                                    (
+                                                        Color32::from_rgb(24, 24, 24),
+                                                        LINE_2,
+                                                        TX_3,
+                                                    )
+                                                };
+                                                ui.painter().rect_filled(b_rect, 0.0_f32, bfill);
+                                                ui.painter().rect_stroke(
+                                                    b_rect,
+                                                    0.0_f32,
+                                                    Stroke::new(1.0_f32, bstroke),
+                                                    egui::StrokeKind::Inside,
+                                                );
+                                                ui.painter().text(
+                                                    b_rect.center(),
+                                                    egui::Align2::CENTER_CENTER,
+                                                    btn_txt,
+                                                    egui::FontId::proportional(10.0_f32),
+                                                    bfg,
+                                                );
+                                                if b_resp.clicked() {
+                                                    toggle_skip_idx = Some(idx);
+                                                }
+                                            },
+                                        );
+                                    });
+
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(format!(
+                                                "{} × {} × {} mm  ·  ID: {}",
+                                                format_num(prog.length),
+                                                format_num(prog.width),
+                                                format_num(prog.thickness),
+                                                prog.id
+                                            ))
+                                            .monospace()
+                                            .size(10.5_f32)
+                                            .color(TX_2),
+                                        )
+                                        .truncate(),
+                                    );
+
+                                    ui.horizontal(|ui| {
+                                        ui.label(
+                                            RichText::new("■")
+                                                .size(7.0_f32)
+                                                .color(if man_skip { WARN } else { OK }),
+                                        );
+                                        let orient = if man_skip {
+                                            "Formatka pomijana"
+                                        } else if prog.flipped_top_bottom {
+                                            "Strona z większą liczbą obróbek u góry (Face 5)"
+                                        } else {
+                                            "Orientacja bazowa"
+                                        };
+                                        ui.label(RichText::new(orient).size(10.5_f32).color(TX_3));
+                                    });
+
+                                    for w in &prog.warnings {
+                                        ui.horizontal_top(|ui| {
+                                            ui.label(RichText::new("■").size(7.0_f32).color(WARN));
+                                            ui.allocate_ui_with_layout(
+                                                Vec2::new(
+                                                    (inner_w - 16.0_f32).max(80.0_f32),
+                                                    14.0_f32,
+                                                ),
+                                                egui::Layout::top_down(egui::Align::LEFT),
+                                                |ui| {
+                                                    ui.add(
+                                                        egui::Label::new(
+                                                            RichText::new(w)
+                                                                .size(10.0_f32)
+                                                                .color(WARN),
+                                                        )
+                                                        .wrap(),
+                                                    );
+                                                },
+                                            );
+                                        });
                                     }
-                                });
-                            })
-                            .response;
 
-                        let r = resp.rect;
-                        if is_sel {
+                                    ui.add_space(2.0_f32);
+                                    ui.horizontal_wrapped(|ui| {
+                                        ui.spacing_mut().item_spacing = Vec2::new(4.0, 3.0);
+                                        if man_skip {
+                                            draw_flat_tag(ui, "Pomijana", WARN);
+                                        }
+                                        if is_empty {
+                                            let lbl = if self.cfg.skip_empty_panels {
+                                                "Pusta · pomijana"
+                                            } else {
+                                                "Pusta"
+                                            };
+                                            draw_flat_tag(ui, lbl, TX_3);
+                                        } else {
+                                            let drills = prog
+                                                .operations
+                                                .iter()
+                                                .filter(|o| {
+                                                    matches!(
+                                                        o,
+                                                        Operation::VerticalDrill { .. }
+                                                            | Operation::HorizontalDrill { .. }
+                                                    )
+                                                })
+                                                .count();
+                                            let lams = prog
+                                                .operations
+                                                .iter()
+                                                .filter(|o| {
+                                                    matches!(o, Operation::LamelloP14 { .. })
+                                                })
+                                                .count();
+                                            let grooves = prog
+                                                .operations
+                                                .iter()
+                                                .filter(|o| matches!(o, Operation::Groove { .. }))
+                                                .count();
+                                            if drills > 0 {
+                                                draw_flat_tag(
+                                                    ui,
+                                                    &format!("Wiercenia {drills}"),
+                                                    COL_VDRILL,
+                                                );
+                                            }
+                                            if lams > 0 {
+                                                draw_flat_tag(
+                                                    ui,
+                                                    &format!("Lamello P14 ×{lams}"),
+                                                    COL_LAMELLO,
+                                                );
+                                            }
+                                            if grooves > 0 {
+                                                draw_flat_tag(
+                                                    ui,
+                                                    &format!("Nuta ×{grooves}"),
+                                                    COL_GROOVE,
+                                                );
+                                            }
+                                        }
+                                        let ec = prog.edges.active_count();
+                                        if ec > 0 {
+                                            draw_flat_tag(
+                                                ui,
+                                                &format!("Obrzeża CSV {ec}/4"),
+                                                COL_EDGE,
+                                            );
+                                        }
+                                        // Chip informujący o ręcznej zmianie orientacji
+                                        if let Some(ref xf_txt) = xf_chip {
+                                            draw_flat_tag(
+                                                ui,
+                                                &format!("Orient.: {xf_txt}"),
+                                                ACC_2,
+                                            );
+                                        }
+                                    });
+                                })
+                                .response;
+
+                            let r = resp.rect;
+                            if is_sel {
+                                ui.painter().line_segment(
+                                    [r.left_top(), r.left_bottom()],
+                                    Stroke::new(2.0_f32, ACC_2),
+                                );
+                            }
                             ui.painter().line_segment(
-                                [r.left_top(), r.left_bottom()],
-                                Stroke::new(2.0_f32, ACC_2),
+                                [r.left_bottom(), r.right_bottom()],
+                                Stroke::new(1.0_f32, LINE),
                             );
-                        }
-                        ui.painter().line_segment(
-                            [r.left_bottom(), r.right_bottom()],
-                            Stroke::new(1.0_f32, LINE),
-                        );
 
-                        if resp.interact(egui::Sense::click()).clicked() {
-                            self.selected_idx = idx;
-                            self.selection = None;
-                            self.viewport.reset_camera();
+                            let row_click = resp.interact(egui::Sense::click());
+                            if row_click.clicked() {
+                                let ptr_on_skip = row_click
+                                    .interact_pointer_pos()
+                                    .is_some_and(|p| skip_btn_rect.expand(2.0).contains(p));
+                                if !ptr_on_skip && toggle_skip_idx != Some(idx) {
+                                    self.selected_idx = idx;
+                                    self.selection = None;
+                                    self.viewport.reset_camera();
+                                }
+                            }
                         }
-                    }
+
+                        if let Some(s_idx) = toggle_skip_idx {
+                            if let Some(p) = self.panels.get_mut(s_idx) {
+                                p.manual_skip = !p.manual_skip;
+                            }
+                        }
                 });
 
                 Frame::NONE
@@ -856,11 +998,16 @@ impl NanxingStudioApp {
     fn draw_right_panel(&mut self, ctx: &egui::Context) {
         self.hover_edge_from_inspector = None;
 
+        const RIGHT_W: f32 = 400.0;
         egui::SidePanel::right("right_panel")
-            .exact_width(400.0_f32)
+            .exact_width(RIGHT_W)
+            .min_width(RIGHT_W)
+            .max_width(RIGHT_W)
             .resizable(false)
             .frame(Frame::NONE.fill(BG_1).stroke(Stroke::new(1.0_f32, LINE)))
             .show(ctx, |ui| {
+                ui.set_width(RIGHT_W);
+                ui.set_max_width(RIGHT_W);
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
 
                 // ── KARTA 1: GABARYTY FORMATKI ──
@@ -1016,52 +1163,8 @@ impl NanxingStudioApp {
                         });
                     draw_h_line(ui);
 
-                    // ── KARTA 3: REGUŁY MASZYNY (live redetect na B-Rep!) ──
-                    panel_header(ui, "REGUŁY MASZYNY", "live B-Rep");
-                    let before_cfg = self.cfg.clone();
-                    draw_rule_row(
-                        ui,
-                        "Kompensacja stożka wiertła (118°)",
-                        &format!("≤ Ø{}", format_num(self.cfg.drill_tip_118_max_dia)),
-                        &mut self.cfg.compensate_drill_cone,
-                    );
-                    draw_rule_row(
-                        ui,
-                        "Limit wiercenia bocznego",
-                        &format!("{} mm", format_num(self.cfg.max_side_drill_depth)),
-                        &mut self.cfg.limit_side_drill,
-                    );
-                    draw_rule_row(
-                        ui,
-                        "Częściowe otwory (< 360°)",
-                        "",
-                        &mut self.cfg.include_partial_holes,
-                    );
-                    draw_rule_row(
-                        ui,
-                        "Zamiana gzymek Ø11 → Ø12",
-                        "Ø12",
-                        &mut self.cfg.swap_d11_to_d12,
-                    );
-                    draw_rule_row(
-                        ui,
-                        "Auto-obrót Góra/Dół (oś Y)",
-                        "F5",
-                        &mut self.cfg.auto_flip_top_bottom,
-                    );
-                    draw_rule_row(
-                        ui,
-                        "Pomijaj puste formatki",
-                        "",
-                        &mut self.cfg.skip_empty_panels,
-                    );
-                    if self.cfg != before_cfg {
-                        self.redetect_all();
-                        self.save_config();
-                    }
-                    draw_h_line(ui);
-
-                    // ── KARTA 4: Tabela operacji | Kod programu (.scx) ──
+                    // ── KARTA 3 (ROSNĄCA): Tabela operacji | Kod programu (.scx) ──
+                    // (Reguły maszyny przeniesiono do okna Ustawienia → Reguły i Wiercenie)
                     let active_edges_cnt = prog.edges.active_count();
                     let rows_total = prog.operations.len() + active_edges_cnt;
 
@@ -1092,13 +1195,37 @@ impl NanxingStudioApp {
                             });
                         });
 
-                    let body_h = (ui.available_height() - 26.0).max(120.0);
+                    let body_h = (ui.available_height() - 26.0).max(160.0);
                     match self.bottom_tab {
                         BottomTab::Operations => {
+                            // Stałe szerokości kolumn tabeli (suma 376 px + margines paska przewijania)
+                            const W_NO: f32 = 42.0;
+                            const W_OP: f32 = 112.0;
+                            const W_XY: f32 = 68.0;
+                            const W_PM: f32 = 152.0;
+
+                            // Przypięty nagłówek kolumn
+                            Frame::NONE
+                                .fill(Color32::from_rgb(23, 23, 23))
+                                .stroke(Stroke::new(1.0_f32, LINE))
+                                .inner_margin(Margin::symmetric(8, 5))
+                                .show(ui, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    ui.horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 6.0_f32;
+                                        col_header(ui, "#", W_NO);
+                                        col_header(ui, "OPERACJA", W_OP);
+                                        col_header(ui, "POZ. X / Y", W_XY);
+                                        col_header(ui, "PARAMETRY", W_PM);
+                                    });
+                                });
+
                             ScrollArea::vertical()
                                 .id_salt("ops_table_scroll")
-                                .max_height(body_h)
+                                .max_height((body_h - 24.0).max(120.0))
+                                .auto_shrink([false, false])
                                 .show(ui, |ui| {
+                                    ui.spacing_mut().item_spacing = Vec2::ZERO;
                                     if rows_total == 0 {
                                         ui.add_space(28.0_f32);
                                         ui.vertical_centered(|ui| {
@@ -1110,221 +1237,155 @@ impl NanxingStudioApp {
                                             ui.label(RichText::new(msg).color(TX_3));
                                         });
                                     } else {
-                                        egui::Grid::new("ops_table_flat")
-                                            .num_columns(4)
-                                            .spacing([8.0, 4.0])
-                                            .min_col_width(38.0)
-                                            .show(ui, |ui| {
-                                                ui.label(RichText::new("#").small().color(TX_3));
-                                                ui.label(
-                                                    RichText::new("OPERACJA").small().color(TX_3),
-                                                );
-                                                ui.label(
-                                                    RichText::new("POZ. X / Y").small().color(TX_3),
-                                                );
-                                                ui.label(
-                                                    RichText::new("PARAMETRY").small().color(TX_3),
-                                                );
-                                                ui.end_row();
+                                        for (idx, op) in prog.operations.iter().enumerate() {
+                                            let kind = LayerKind::of_op(op);
+                                            let is_sel = self.selection == Some(Selection::Op(idx));
+                                            let (face_u8, op_col, x_line, y_line, p1, p2) = match op {
+                                                Operation::VerticalDrill {
+                                                    face,
+                                                    x,
+                                                    y,
+                                                    diameter,
+                                                    depth,
+                                                    is_through,
+                                                } => (
+                                                    *face,
+                                                    if *is_through {
+                                                        COL_VDRILL_THRU
+                                                    } else {
+                                                        kind.color()
+                                                    },
+                                                    format!("{:.1}", x),
+                                                    format!("{:.1}", y),
+                                                    format!(
+                                                        "Ø{} · gł. {:.1}",
+                                                        format_num(*diameter),
+                                                        depth
+                                                    ),
+                                                    if *is_through {
+                                                        "przelot (góra+dół)".to_string()
+                                                    } else if *face == 6 {
+                                                        "od dołu (pierścień)".to_string()
+                                                    } else {
+                                                        String::new()
+                                                    },
+                                                ),
+                                                Operation::HorizontalDrill {
+                                                    face,
+                                                    x,
+                                                    y,
+                                                    z,
+                                                    diameter,
+                                                    depth,
+                                                } => (
+                                                    *face,
+                                                    kind.color(),
+                                                    format!("{:.1}", x),
+                                                    format!("{:.1}", y),
+                                                    format!(
+                                                        "Ø{} · gł. {:.1}",
+                                                        format_num(*diameter),
+                                                        depth
+                                                    ),
+                                                    format!("Z {:.1}", z),
+                                                ),
+                                                Operation::LamelloP14 {
+                                                    face,
+                                                    direction,
+                                                    x,
+                                                    y,
+                                                    z,
+                                                    width,
+                                                    max_depth,
+                                                    ..
+                                                } => (
+                                                    *face,
+                                                    if *face >= 5 {
+                                                        COL_LAMELLO_FACE
+                                                    } else {
+                                                        COL_LAMELLO
+                                                    },
+                                                    format!("{:.1}", x),
+                                                    format!("{:.1}", y),
+                                                    format!(
+                                                        "dir {} · W{}",
+                                                        direction,
+                                                        format_num(*width)
+                                                    ),
+                                                    format!(
+                                                        "gł. {} · Z {:.1}",
+                                                        format_num(*max_depth),
+                                                        z
+                                                    ),
+                                                ),
+                                                Operation::Groove {
+                                                    face,
+                                                    x,
+                                                    y,
+                                                    width,
+                                                    depth,
+                                                    ..
+                                                } => (
+                                                    *face,
+                                                    kind.color(),
+                                                    format!("{:.1}", x),
+                                                    format!("{:.1}", y),
+                                                    format!(
+                                                        "szer. {} · gł. {:.1}",
+                                                        format_num(*width),
+                                                        depth
+                                                    ),
+                                                    String::new(),
+                                                ),
+                                            };
 
-                                                for (idx, op) in prog.operations.iter().enumerate() {
-                                                    let kind = LayerKind::of_op(op);
-                                                    let col = kind.color();
-                                                    let is_sel =
-                                                        self.selection == Some(Selection::Op(idx));
+                                            if draw_ops_row(
+                                                ui,
+                                                is_sel,
+                                                &format!("N{:03}", (idx + 1) * 10),
+                                                op_col,
+                                                kind.short_name(),
+                                                face_short_label(face_u8),
+                                                &x_line,
+                                                &y_line,
+                                                &p1,
+                                                &p2,
+                                                (W_NO, W_OP, W_XY, W_PM),
+                                            )
+                                            .clicked()
+                                            {
+                                                self.selection = Some(Selection::Op(idx));
+                                            }
+                                        }
 
-                                                    let (face_u8, xy_str, params_str) = match op {
-                                                        Operation::VerticalDrill {
-                                                            face,
-                                                            x,
-                                                            y,
-                                                            diameter,
-                                                            depth,
-                                                            is_through,
-                                                        } => (
-                                                            *face,
-                                                            format!(
-                                                                "{}\n{}",
-                                                                format_num(*x),
-                                                                format_num(*y)
-                                                            ),
-                                                            format!(
-                                                                "Ø{} · gł. {}{}",
-                                                                format_num(*diameter),
-                                                                format_num(*depth),
-                                                                if *is_through {
-                                                                    " (przelot)"
-                                                                } else {
-                                                                    ""
-                                                                }
-                                                            ),
-                                                        ),
-                                                        Operation::HorizontalDrill {
-                                                            face,
-                                                            x,
-                                                            y,
-                                                            z,
-                                                            diameter,
-                                                            depth,
-                                                        } => (
-                                                            *face,
-                                                            format!(
-                                                                "{}\n{}",
-                                                                format_num(*x),
-                                                                format_num(*y)
-                                                            ),
-                                                            format!(
-                                                                "Ø{} · gł. {} · Z{}",
-                                                                format_num(*diameter),
-                                                                format_num(*depth),
-                                                                format_num(*z)
-                                                            ),
-                                                        ),
-                                                        Operation::LamelloP14 {
-                                                            face,
-                                                            direction,
-                                                            x,
-                                                            y,
-                                                            z,
-                                                            width,
-                                                            max_depth,
-                                                            ..
-                                                        } => (
-                                                            *face,
-                                                            format!(
-                                                                "{}\n{}",
-                                                                format_num(*x),
-                                                                format_num(*y)
-                                                            ),
-                                                            format!(
-                                                                "dir {} · W{} · D{} · Z{}",
-                                                                direction,
-                                                                format_num(*width),
-                                                                format_num(*max_depth),
-                                                                format_num(*z)
-                                                            ),
-                                                        ),
-                                                        Operation::Groove {
-                                                            face,
-                                                            x,
-                                                            y,
-                                                            width,
-                                                            depth,
-                                                            ..
-                                                        } => (
-                                                            *face,
-                                                            format!(
-                                                                "{}\n{}",
-                                                                format_num(*x),
-                                                                format_num(*y)
-                                                            ),
-                                                            format!(
-                                                                "W{} · gł. {}",
-                                                                format_num(*width),
-                                                                format_num(*depth)
-                                                            ),
-                                                        ),
-                                                    };
-
-                                                    ui.label(
-                                                        RichText::new(format!(
-                                                            "N{:03}",
-                                                            (idx + 1) * 10
-                                                        ))
-                                                        .monospace()
-                                                        .size(10.5_f32)
-                                                        .color(TX_3),
-                                                    );
-                                                    ui.vertical(|ui| {
-                                                        if ui
-                                                            .selectable_label(
-                                                                is_sel,
-                                                                RichText::new(format!(
-                                                                    "■ {}",
-                                                                    kind.short_name()
-                                                                ))
-                                                                .monospace()
-                                                                .size(10.5_f32)
-                                                                .color(col),
-                                                            )
-                                                            .clicked()
-                                                        {
-                                                            self.selection =
-                                                                Some(Selection::Op(idx));
-                                                        }
-                                                        ui.label(
-                                                            RichText::new(face_short_label(face_u8))
-                                                                .size(10.0_f32)
-                                                                .color(TX_3),
-                                                        );
-                                                    });
-                                                    ui.label(
-                                                        RichText::new(xy_str)
-                                                            .monospace()
-                                                            .size(10.5_f32)
-                                                            .color(TX_2),
-                                                    );
-                                                    ui.label(
-                                                        RichText::new(params_str)
-                                                            .monospace()
-                                                            .size(10.5_f32)
-                                                            .color(TX_2),
-                                                    );
-                                                    ui.end_row();
-                                                }
-
-                                                for (face, m_idx) in
-                                                    [(1u8, 0usize), (2, 1), (3, 2), (4, 3)]
-                                                {
-                                                    let th = prog.edges.get(face);
-                                                    if th <= 0.01 {
-                                                        continue;
-                                                    }
-                                                    let is_sel = self.selection
-                                                        == Some(Selection::Edge(face));
-                                                    let manual = loaded.edge_manual[m_idx];
-                                                    ui.label(
-                                                        RichText::new("OBRZ")
-                                                            .monospace()
-                                                            .size(10.5_f32)
-                                                            .color(TX_3),
-                                                    );
-                                                    ui.vertical(|ui| {
-                                                        if ui
-                                                            .selectable_label(
-                                                                is_sel,
-                                                                RichText::new("■ OBRZEŻE")
-                                                                    .monospace()
-                                                                    .size(10.5_f32)
-                                                                    .color(COL_EDGE),
-                                                            )
-                                                            .clicked()
-                                                        {
-                                                            self.selection =
-                                                                Some(Selection::Edge(face));
-                                                        }
-                                                        ui.label(
-                                                            RichText::new(edge_face_label(face))
-                                                                .size(10.0_f32)
-                                                                .color(TX_3),
-                                                        );
-                                                    });
-                                                    ui.label(
-                                                        RichText::new("—").monospace().color(TX_3),
-                                                    );
-                                                    ui.label(
-                                                        RichText::new(format!(
-                                                            "{} · {}",
-                                                            prog.edges.code_label(face),
-                                                            if manual { "ręcznie" } else { "CSV" }
-                                                        ))
-                                                        .monospace()
-                                                        .size(10.5_f32)
-                                                        .color(TX_2),
-                                                    );
-                                                    ui.end_row();
-                                                }
-                                            });
+                                        for (face, m_idx) in
+                                            [(1u8, 0usize), (2, 1), (3, 2), (4, 3)]
+                                        {
+                                            let th = prog.edges.get(face);
+                                            if th <= 0.01 {
+                                                continue;
+                                            }
+                                            let is_sel =
+                                                self.selection == Some(Selection::Edge(face));
+                                            let manual = loaded.edge_manual[m_idx];
+                                            if draw_ops_row(
+                                                ui,
+                                                is_sel,
+                                                "OBRZ",
+                                                COL_EDGE,
+                                                "OBRZEŻE",
+                                                edge_face_label(face),
+                                                "—",
+                                                "",
+                                                prog.edges.code_label(face),
+                                                if manual { "ręcznie" } else { "CSV" },
+                                                (W_NO, W_OP, W_XY, W_PM),
+                                            )
+                                            .clicked()
+                                            {
+                                                self.selection = Some(Selection::Edge(face));
+                                            }
+                                        }
                                     }
                                 });
                         }
@@ -1436,60 +1497,6 @@ impl NanxingStudioApp {
             .show(ctx, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
 
-                // Pasek .cbar (X-Ray | Góra | Dół + Dopasuj + Siatka)
-                Frame::NONE
-                    .fill(BG_2)
-                    .stroke(Stroke::new(1.0_f32, LINE))
-                    .inner_margin(Margin::symmetric(10, 6))
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 4.0_f32;
-                            Frame::NONE
-                                .stroke(Stroke::new(1.0_f32, LINE_2))
-                                .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        ui.spacing_mut().item_spacing.x = 0.0_f32;
-                                        for (mode, lbl) in [
-                                            (ViewMode::XRay, "X-Ray"),
-                                            (ViewMode::TopF5, "Góra"),
-                                            (ViewMode::BottomF6, "Dół"),
-                                        ] {
-                                            let on = self.viewport.view_mode == mode;
-                                            let btn = egui::Button::new(
-                                                RichText::new(lbl)
-                                                    .size(11.5_f32)
-                                                    .color(if on { PRI_TX } else { TX_2 }),
-                                            )
-                                            .fill(if on { BG_PRI } else { BG_2 })
-                                            .stroke(Stroke::NONE)
-                                            .corner_radius(CornerRadius::ZERO);
-                                            if ui.add_sized([58.0, 24.0], btn).clicked() {
-                                                self.viewport.view_mode = mode;
-                                            }
-                                        }
-                                    });
-                                });
-
-                            ui.separator();
-
-                            if xform_btn(ui, "Dopasuj (F)").clicked() {
-                                self.viewport.reset_camera();
-                            }
-                            if xform_btn(
-                                ui,
-                                if self.viewport.show_grid {
-                                    "Siatka: WŁ (G)"
-                                } else {
-                                    "Siatka: WYŁ (G)"
-                                },
-                            )
-                            .clicked()
-                            {
-                                self.viewport.show_grid = !self.viewport.show_grid;
-                            }
-                        });
-                    });
-
                 // Dolna interaktywna legenda (#legend)
                 egui::TopBottomPanel::bottom("viewport_legend")
                     .frame(
@@ -1529,15 +1536,33 @@ impl NanxingStudioApp {
                                         ui.add(egui::Button::new(lbl).frame(false))
                                     })
                                     .inner;
-                                if resp.on_hover_text("Klik: pokaż / ukryj warstwę").clicked() {
+                                if resp
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                    .on_hover_text("Klik: pokaż / ukryj warstwę")
+                                    .clicked()
+                                {
                                     self.viewport.toggle_layer(kind);
                                 }
                             }
+
+                            ui.separator();
+                            // Podgląd symboli otworów pionowych (góra / dół / przelot)
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 5.0_f32;
+                                ui.label(RichText::new("●").size(11.0_f32).color(COL_VDRILL));
+                                ui.label(RichText::new("Góra").size(10.5_f32).color(TX_3));
+                                ui.add_space(4.0_f32);
+                                ui.label(RichText::new("◯").size(11.0_f32).color(COL_VDRILL));
+                                ui.label(RichText::new("Dół").size(10.5_f32).color(TX_3));
+                                ui.add_space(4.0_f32);
+                                ui.label(RichText::new("◉").size(11.5_f32).color(COL_VDRILL_THRU));
+                                ui.label(RichText::new("Przelot").size(10.5_f32).color(TX_3));
+                            });
                         });
                     });
 
-                // Płótno CAD albo ekran startowy (gdy nie wczytano jeszcze STEP)
-                if let Some(loaded) = self.panels.get(self.selected_idx) {
+                // Płótno CAD albo delikatny napis na pustym tle (gdy nie wczytano jeszcze STEP)
+                let vp_action = if let Some(loaded) = self.panels.get(self.selected_idx) {
                     draw_cad_viewport(
                         ui,
                         &loaded.program,
@@ -1545,51 +1570,49 @@ impl NanxingStudioApp {
                         &mut self.viewport,
                         &mut self.selection,
                         self.hover_edge_from_inspector,
-                    );
+                        !loaded.user_transforms.is_empty(),
+                        loaded.manual_skip,
+                    )
                 } else {
                     Frame::NONE.fill(BG_CANVAS).show(ui, |ui| {
                         ui.centered_and_justified(|ui| {
-                            Frame::NONE
-                                .fill(BG_1)
-                                .stroke(Stroke::new(1.0_f32, LINE_2))
-                                .inner_margin(Margin::same(24))
-                                .show(ui, |ui| {
-                                    ui.set_max_width(460.0_f32);
-                                    ui.vertical_centered(|ui| {
-                                        ui.label(
-                                            RichText::new("Nanxing 6S — Konwerter STEP → SCX")
-                                                .strong()
-                                                .size(15.0_f32)
-                                                .color(TX),
-                                        );
-                                        ui.add_space(8.0_f32);
-                                        ui.label(
-                                            RichText::new(
-                                                "Wczytaj pojedynczy plik .step/.stp lub cały folder z formatkami, aby rozpoznać wiercenia i gniazda Lamello P14 oraz wygenerować gotowe programy .scx.",
-                                            )
-                                            .color(TX_2),
-                                        );
-                                        ui.add_space(16.0_f32);
-                                        ui.horizontal(|ui| {
-                                            if toolbar_btn(ui, "Otwórz folder STEP", true).clicked()
-                                            {
-                                                self.open_step_folder_dialog();
-                                            }
-                                            ui.add_space(6.0_f32);
-                                            if toolbar_btn(ui, "Otwórz pliki STEP", false).clicked()
-                                            {
-                                                self.open_step_files_dialog();
-                                            }
-                                            ui.add_space(6.0_f32);
-                                            if toolbar_btn(ui, "⚙ Ustawienia", false).clicked() {
-                                                self.settings_dlg
-                                                    .open_with(&self.cfg, SettingsCategory::Paths);
-                                            }
-                                        });
-                                    });
-                                });
+                            ui.label(
+                                RichText::new("Załaduj plik lub folder STEP, aby wyświetlić podgląd formatki")
+                                    .size(12.5_f32)
+                                    .color(TX_3),
+                            );
                         });
                     });
+                    ViewportAction::None
+                };
+
+                match vp_action {
+                    ViewportAction::Transform(xf) => {
+                        let opts = self.cfg.to_convert_options();
+                        if let Some(panel) = self.panels.get_mut(self.selected_idx) {
+                            panel.apply_transform(xf, &opts);
+                            self.selection = None;
+                            let name = panel.program.name.clone();
+                            self.set_status(format!(
+                                "Zmieniono orientację ({}) dla: {}",
+                                xf.short_chip_label(),
+                                name
+                            ));
+                        }
+                    }
+                    ViewportAction::ResetTransforms => {
+                        let opts = self.cfg.to_convert_options();
+                        if let Some(panel) = self.panels.get_mut(self.selected_idx) {
+                            panel.reset_transforms(&opts);
+                            self.selection = None;
+                            let name = panel.program.name.clone();
+                            self.set_status(format!(
+                                "Przywrócono orientację domyślną dla: {}",
+                                name
+                            ));
+                        }
+                    }
+                    ViewportAction::None => {}
                 }
             });
     }
@@ -1638,8 +1661,7 @@ impl NanxingStudioApp {
 
                                         for loaded in &self.panels {
                                             let prog = &loaded.program;
-                                            let skip = self.cfg.skip_empty_panels
-                                                && prog.operations.is_empty();
+                                            let skip = self.is_panel_skipped(loaded);
                                             let lines = if skip {
                                                 0
                                             } else {
@@ -1668,7 +1690,9 @@ impl NanxingStudioApp {
                                                 .monospace(),
                                             );
 
-                                            if skip {
+                                            if loaded.manual_skip {
+                                                ui.label(RichText::new("pominięta").color(WARN));
+                                            } else if skip {
                                                 ui.label(
                                                     RichText::new("pominięta (pusta)").color(TX_3),
                                                 );
@@ -1736,9 +1760,12 @@ impl NanxingStudioApp {
                     .show(ctx, |ui| {
                         Frame::NONE.inner_margin(Margin::same(14)).show(ui, |ui| {
                             ui.label(
-                                RichText::new("Nanxing 6S — Konwerter STEP → SCX")
-                                    .strong()
-                                    .color(TX),
+                                RichText::new(format!(
+                                    "Nanxing Converter v{}",
+                                    env!("CARGO_PKG_VERSION")
+                                ))
+                                .strong()
+                                .color(TX),
                             );
                             ui.add_space(6.0_f32);
                             ui.label(
@@ -1800,17 +1827,27 @@ fn is_step_file(p: &Path) -> bool {
 }
 
 fn panel_header(ui: &mut egui::Ui, title: &str, sub: &str) {
+    let max_w = ui.available_width();
     Frame::NONE
         .fill(BG_2)
         .stroke(Stroke::new(1.0_f32, LINE))
         .inner_margin(Margin::symmetric(12, 6))
         .show(ui, |ui| {
-            ui.set_width(ui.available_width());
+            let inner_w = (max_w - 24.0_f32).max(80.0_f32);
+            ui.set_width(inner_w);
+            ui.set_max_width(inner_w);
             ui.horizontal(|ui| {
                 ui.label(RichText::new(title).size(10.5_f32).strong().color(TX_2));
                 if !sub.is_empty() {
+                    let sub_max = (ui.available_width() - 4.0_f32).max(40.0_f32);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(RichText::new(sub).monospace().size(10.5_f32).color(TX_3));
+                        ui.set_max_width(sub_max);
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(sub).monospace().size(10.5_f32).color(TX_3),
+                            )
+                            .truncate(),
+                        );
                     });
                 }
             });
@@ -1825,28 +1862,54 @@ fn draw_h_line(ui: &mut egui::Ui) {
 }
 
 fn toolbar_btn(ui: &mut egui::Ui, label: &str, primary: bool) -> egui::Response {
-    let btn = if primary {
-        egui::Button::new(RichText::new(label).color(PRI_TX))
-            .fill(BG_PRI)
-            .stroke(Stroke::new(1.0_f32, PRI_BORDER))
-            .corner_radius(CornerRadius::ZERO)
-    } else {
-        egui::Button::new(RichText::new(label).color(TX))
-            .fill(Color32::TRANSPARENT)
-            .stroke(Stroke::new(1.0_f32, Color32::TRANSPARENT))
-            .corner_radius(CornerRadius::ZERO)
-    };
-    ui.add_sized([0.0, 28.0], btn)
-}
+    let font = egui::FontId::proportional(11.5_f32);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.to_string(), font.clone(), TX);
+    let btn_w = galley.size().x + 22.0_f32;
+    let btn_h = 28.0_f32;
 
-fn xform_btn(ui: &mut egui::Ui, label: &str) -> egui::Response {
-    ui.add_sized(
-        [0.0, 24.0],
-        egui::Button::new(RichText::new(label).size(11.5_f32).color(TX))
-            .fill(Color32::from_rgb(20, 20, 20))
-            .stroke(Stroke::new(1.0_f32, LINE_2))
-            .corner_radius(CornerRadius::ZERO),
-    )
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(btn_w, btn_h), egui::Sense::click());
+    let down = resp.is_pointer_button_down_on();
+    let hov = resp.hovered();
+
+    let (fill, border, fg) = if primary {
+        if down {
+            (Color32::from_rgb(8, 38, 48), ACC_2, Color32::WHITE)
+        } else if hov {
+            (Color32::from_rgb(18, 78, 98), ACC_2, Color32::WHITE)
+        } else {
+            (BG_PRI, PRI_BORDER, PRI_TX)
+        }
+    } else if down {
+        (Color32::from_rgb(14, 52, 66), ACC_2, PRI_TX)
+    } else if hov {
+        (Color32::from_rgb(36, 42, 46), ACC, Color32::WHITE)
+    } else {
+        (Color32::from_rgb(26, 26, 26), LINE_2, TX)
+    };
+
+    ui.painter().rect_filled(rect, 0.0_f32, fill);
+    ui.painter().rect_stroke(
+        rect,
+        0.0_f32,
+        Stroke::new(1.0_f32, border),
+        egui::StrokeKind::Inside,
+    );
+    let text_center = if down {
+        rect.center() + Vec2::new(0.0_f32, 1.0_f32)
+    } else {
+        rect.center()
+    };
+    ui.painter().text(
+        text_center,
+        egui::Align2::CENTER_CENTER,
+        label,
+        font,
+        fg,
+    );
+
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 fn tab_button(ui: &mut egui::Ui, label: &str, active: bool) -> egui::Response {
@@ -1905,78 +1968,111 @@ fn draw_flat_tag(ui: &mut egui::Ui, text: &str, accent: Color32) {
         .line_segment([r.left_top(), r.left_bottom()], Stroke::new(2.0_f32, accent));
 }
 
-fn draw_rule_row(ui: &mut egui::Ui, title: &str, badge: &str, value: &mut bool) {
+fn col_header(ui: &mut egui::Ui, title: &str, width: f32) {
+    ui.allocate_ui_with_layout(
+        Vec2::new(width, 14.0_f32),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.label(RichText::new(title).size(9.5_f32).strong().color(TX_3));
+        },
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_ops_row(
+    ui: &mut egui::Ui,
+    selected: bool,
+    no: &str,
+    col: Color32,
+    op_name: &str,
+    face_sub: &str,
+    x_line: &str,
+    y_line: &str,
+    param_line1: &str,
+    param_line2: &str,
+    widths: (f32, f32, f32, f32),
+) -> egui::Response {
+    let (w_no, w_op, w_xy, w_pm) = widths;
+    let bg = if selected { BG_SEL } else { BG_1 };
     let resp = Frame::NONE
-        .fill(BG_1)
-        .inner_margin(Margin::symmetric(12, 5))
+        .fill(bg)
+        .inner_margin(Margin::symmetric(8, 5))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(title).size(11.5_f32).color(TX));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let (sw_rect, sw_resp) =
-                        ui.allocate_exact_size(Vec2::new(30.0, 14.0), egui::Sense::click());
-                    let bg = if *value {
-                        Color32::from_rgb(11, 52, 66)
-                    } else {
-                        Color32::from_rgb(29, 29, 29)
-                    };
-                    let bd = if *value {
-                        ACC
-                    } else {
-                        Color32::from_rgb(54, 54, 54)
-                    };
-                    ui.painter().rect_filled(sw_rect, 0.0_f32, bg);
-                    ui.painter().rect_stroke(
-                        sw_rect,
-                        0.0_f32,
-                        Stroke::new(1.0_f32, bd),
-                        egui::StrokeKind::Inside,
-                    );
-                    let knob_x = if *value {
-                        sw_rect.left() + 18.0
-                    } else {
-                        sw_rect.left() + 3.0
-                    };
-                    let knob_rect = egui::Rect::from_min_size(
-                        egui::Pos2::new(knob_x, sw_rect.top() + 3.0),
-                        Vec2::new(8.0, 8.0),
-                    );
-                    ui.painter().rect_filled(
-                        knob_rect,
-                        0.0_f32,
-                        if *value {
-                            ACC_2
-                        } else {
-                            Color32::from_rgb(102, 102, 102)
-                        },
-                    );
-                    if sw_resp.clicked() {
-                        *value = !*value;
-                    }
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0_f32;
 
-                    if !badge.is_empty() {
-                        ui.add_space(6.0_f32);
-                        Frame::NONE
-                            .stroke(Stroke::new(1.0_f32, Color32::from_rgb(42, 42, 42)))
-                            .inner_margin(Margin::symmetric(5, 0))
-                            .show(ui, |ui| {
-                                ui.label(
-                                    RichText::new(badge)
-                                        .monospace()
-                                        .size(10.0_f32)
-                                        .color(TX_2),
-                                );
-                            });
-                    }
-                });
+                // Kolumna 1: #
+                ui.allocate_ui_with_layout(
+                    Vec2::new(w_no, 28.0_f32),
+                    egui::Layout::top_down(egui::Align::LEFT),
+                    |ui| {
+                        ui.label(RichText::new(no).monospace().size(10.5_f32).color(TX_3));
+                    },
+                );
+
+                // Kolumna 2: Operacja + ściana
+                ui.allocate_ui_with_layout(
+                    Vec2::new(w_op, 28.0_f32),
+                    egui::Layout::top_down(egui::Align::LEFT),
+                    |ui| {
+                        ui.spacing_mut().item_spacing.y = 1.0_f32;
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 4.0_f32;
+                            ui.label(RichText::new("■").size(8.5_f32).color(col));
+                            ui.label(RichText::new(op_name).monospace().size(10.5_f32).color(col));
+                        });
+                        ui.label(RichText::new(face_sub).size(10.0_f32).color(TX_3));
+                    },
+                );
+
+                // Kolumna 3: Poz. X / Y
+                ui.allocate_ui_with_layout(
+                    Vec2::new(w_xy, 28.0_f32),
+                    egui::Layout::top_down(egui::Align::LEFT),
+                    |ui| {
+                        ui.spacing_mut().item_spacing.y = 1.0_f32;
+                        ui.label(RichText::new(x_line).monospace().size(10.5_f32).color(TX_2));
+                        if !y_line.is_empty() {
+                            ui.label(RichText::new(y_line).monospace().size(10.5_f32).color(TX_2));
+                        }
+                    },
+                );
+
+                // Kolumna 4: Parametry
+                ui.allocate_ui_with_layout(
+                    Vec2::new(w_pm, 28.0_f32),
+                    egui::Layout::top_down(egui::Align::LEFT),
+                    |ui| {
+                        ui.spacing_mut().item_spacing.y = 1.0_f32;
+                        ui.label(
+                            RichText::new(param_line1)
+                                .monospace()
+                                .size(10.5_f32)
+                                .color(TX_2),
+                        );
+                        if !param_line2.is_empty() {
+                            ui.label(
+                                RichText::new(param_line2)
+                                    .monospace()
+                                    .size(10.0_f32)
+                                    .color(TX_3),
+                            );
+                        }
+                    },
+                );
             });
         })
         .response;
 
     let r = resp.rect;
+    if selected {
+        ui.painter()
+            .line_segment([r.left_top(), r.left_bottom()], Stroke::new(2.0_f32, ACC_2));
+    }
     ui.painter().line_segment(
         [r.left_bottom(), r.right_bottom()],
-        Stroke::new(1.0_f32, Color32::from_rgb(27, 27, 27)),
+        Stroke::new(1.0_f32, Color32::from_rgb(26, 26, 26)),
     );
+    resp.interact(egui::Sense::click())
 }

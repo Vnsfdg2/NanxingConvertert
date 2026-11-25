@@ -25,10 +25,13 @@ pub const PRI_BORDER: Color32 = Color32::from_rgb(14, 109, 139); // #0e6d8b
 pub const WARN: Color32 = Color32::from_rgb(214, 162, 74); // #d6a24a
 pub const OK: Color32 = Color32::from_rgb(95, 174, 109); // #5fae6d
 
-// Kolory operacji (KC z makiety)
-pub const COL_VDRILL: Color32 = Color32::from_rgb(79, 159, 208); // #4f9fd0
+// Kolory operacji (KC z makiety + rozróżnienie przelotu)
+pub const COL_VDRILL: Color32 = Color32::from_rgb(79, 159, 208); // #4f9fd0 (wiercenie pionowe góra / dół)
+pub const COL_VDRILL_THRU: Color32 = Color32::from_rgb(62, 207, 142); // #3ecf8e (wiercenie przelotowe góra+dół)
 pub const COL_SDRILL: Color32 = Color32::from_rgb(214, 176, 74); // #d6b04a
-pub const COL_LAMELLO: Color32 = Color32::from_rgb(169, 139, 212); // #a98bd4
+pub const COL_LAMELLO: Color32 = Color32::from_rgb(169, 139, 212); // #a98bd4 (nuta w krawędzi)
+pub const COL_LAMELLO_FACE: Color32 = Color32::from_rgb(199, 155, 230); // #c79be6 (gniazdo w powierzchni)
+pub const COL_LAMELLO_KEY: Color32 = Color32::from_rgb(236, 210, 247); // #ecd2f7 (otwór pod klucz Clamex)
 pub const COL_GROOVE: Color32 = Color32::from_rgb(212, 104, 95); // #d4685f
 pub const COL_EDGE: Color32 = Color32::from_rgb(207, 212, 216); // #cfd4d8
 
@@ -91,13 +94,14 @@ impl LayerKind {
 }
 
 pub fn face_short_label(face: u8) -> &'static str {
+    // Zgodne z widokiem maszyny (baza 0,0 w prawym górnym narożniku przy bolcu)
     match face {
-        1 => "F1 TYŁ",
-        2 => "F2 PRZÓD",
-        3 => "F3 PRAWO",
-        4 => "F4 LEWO",
-        5 => "F5 GÓRA",
-        6 => "F6 DÓŁ",
+        1 => "F1 DÓŁ",
+        2 => "F2 GÓRA",
+        3 => "F3 LEWO",
+        4 => "F4 PRAWO",
+        5 => "F5 GÓRA Z+",
+        6 => "F6 DÓŁ Z-",
         _ => "F?",
     }
 }

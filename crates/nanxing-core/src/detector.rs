@@ -60,8 +60,27 @@ pub fn detect_panel_program(
             continue;
         }
 
-        // Reject partial arcs (< 360°) unless explicitly enabled
-        if !opts.include_partial_holes && !is_full_360_hole(g) {
+        // Reject partial arcs (< 360°) unless explicitly enabled — except vertical Clamex access cylinders
+        // sitting directly inside an already-detected edge Lamello P14 slot (in case CAD exported B-spline intersection edges)
+        let over_edge_lamello = g.axis.z.abs() > 0.99
+            && lamello_ops.iter().any(|lop| {
+                if let Operation::LamelloP14 { face, x, y, .. } = *lop {
+                    (1..=4).contains(&face)
+                        && is_hole_in_edge_lamello_zone(
+                            face,
+                            x,
+                            y,
+                            g.origin.x,
+                            g.origin.y,
+                            dia,
+                            solid.length,
+                            solid.width,
+                        )
+                } else {
+                    false
+                }
+            });
+        if !opts.include_partial_holes && !over_edge_lamello && !is_full_360_hole(g) {
             continue;
         }
 
@@ -101,46 +120,64 @@ pub fn detect_panel_program(
         for p in &mut outline {
             p.x = solid.length - p.x;
         }
+        outline.reverse();
     }
 
-    // 4. For each edge Lamello P14 (Face 1..4), replace any shallow STEP Ø6 hole with full technical Ø6 imbus hole on Face 5
+    // 4. Dla każdego gniazda krawędziowego Lamello P14 (Face 1..4):
+    //    - jeśli w bryle STEP w obrębie gniazda znajduje się pionowy otwór (Clamex P-14 z SolidCraft / TopSolid Wood),
+    //      zachowujemy wiercenie od góry (Face 5) i dopilnowujemy głębokości do osi gniazda (T - z);
+    //    - jeśli w bryle STEP w obrębie gniazda NIE MA otworu (np. Lamello Tenso P-14 zatrzaskowe),
+    //      NIE dodajemy żadnego sztucznego wiercenia!
     let mut imbus_ops: Vec<Operation> = Vec::new();
     for op in &lamello_ops {
         if let Operation::LamelloP14 { face, x, y, z, .. } = *op {
             if (1..=4).contains(&face) {
-                let (ix, iy) = match face {
-                    1 => (x, solid.width - opts.lamello_imbus_edge_offset), // Y = W
-                    2 => (x, opts.lamello_imbus_edge_offset),               // Y = 0
-                    3 => (solid.length - opts.lamello_imbus_edge_offset, y), // X = L
-                    4 => (opts.lamello_imbus_edge_offset, y),               // X = 0
-                    _ => continue,
-                };
-                // Remove any matching shallow Ø6 hole from STEP near (ix, iy)
+                let mut found_hole: Option<(f64, f64, f64, f64, bool)> = None;
                 drill_ops.retain(|d| {
                     if let Operation::VerticalDrill {
                         x: dx,
                         y: dy,
                         diameter,
+                        depth,
+                        is_through,
                         ..
                     } = *d
                     {
-                        let close = (dx - ix).hypot(dy - iy) < 3.5;
-                        let is_d6 = (diameter - opts.lamello_imbus_diameter).abs() < 0.4;
-                        !(close && is_d6)
-                    } else {
-                        true
+                        if is_hole_in_edge_lamello_zone(
+                            face,
+                            x,
+                            y,
+                            dx,
+                            dy,
+                            diameter,
+                            solid.length,
+                            solid.width,
+                        ) {
+                            if found_hole.is_none() {
+                                found_hole = Some((dx, dy, diameter, depth, is_through));
+                            }
+                            return false;
+                        }
                     }
+                    true
                 });
 
-                let imbus_depth = (solid.thickness - z).clamp(1.0, solid.thickness);
-                imbus_ops.push(Operation::VerticalDrill {
-                    face: 5,
-                    x: ix,
-                    y: iy,
-                    diameter: opts.lamello_imbus_diameter,
-                    depth: imbus_depth,
-                    is_through: false,
-                });
+                if let Some((hx, hy, hdia, hdepth, is_through)) = found_hole {
+                    let min_clamex_depth = (solid.thickness - z).clamp(1.0, solid.thickness);
+                    let final_depth = if is_through {
+                        solid.thickness
+                    } else {
+                        hdepth.max(min_clamex_depth).min(solid.thickness)
+                    };
+                    imbus_ops.push(Operation::VerticalDrill {
+                        face: 5,
+                        x: hx,
+                        y: hy,
+                        diameter: hdia,
+                        depth: final_depth,
+                        is_through,
+                    });
+                }
             }
         }
     }
@@ -150,23 +187,9 @@ pub fn detect_panel_program(
     operations.extend(imbus_ops);
     operations.extend(lamello_ops);
 
-    // 5. Machine safety warnings (Pr90011 = 45 mm min width, Pr90056 = 100 mm anti-pinch warning)
-    let mut warnings = Vec::new();
-    if solid.width < opts.min_panel_width {
-        warnings.push(format!(
-            "BŁĄD LIMITU: Szerokość formatki {:.1} mm < {:.1} mm (Pr90011)!",
-            solid.width, opts.min_panel_width
-        ));
-    } else if solid.width < opts.anti_pinch_warning_width {
-        warnings.push(format!(
-            "OSTRZEŻENIE: Szerokość formatki {:.1} mm < {:.1} mm (alarm przytrzaśnięcia Pr90056).",
-            solid.width, opts.anti_pinch_warning_width
-        ));
-    }
-
     let short_id = extract_short_id(file_stem, solid.product_name.as_deref());
 
-    PanelProgram {
+    let mut prog = PanelProgram {
         id: short_id,
         name: file_stem.to_string(),
         length: solid.length,
@@ -177,9 +200,18 @@ pub fn detect_panel_program(
         outline,
         operations,
         edges: EdgeBanding::default(),
-        warnings,
+        warnings: Vec::new(),
         flipped_top_bottom: flipped,
+    };
+
+    // 5. Automatyczny obrót w osi Z (mniej otworów od strony łap na dłuższych bokach + kąt prosty 90° przy (0,0) i pełny bok dla kształtów L/skosów)
+    if opts.auto_flip_top_bottom {
+        crate::transforms::auto_orient_in_z(&mut prog, opts);
+    } else {
+        crate::transforms::recompute_panel_warnings(&mut prog, opts);
     }
+
+    prog
 }
 
 /// Extract short barcode/QR ID (e.g. `S01_03`, `S14_15`, `SW_65`) regardless of token order,
@@ -377,12 +409,21 @@ fn classify_lamello_p14(
         return None;
     }
 
-    // Surface Lamello P14 (enters top Z=T or bottom Z=0): axis is along X or Y, origin.z outside [0, T]
-    if g.axis.z.abs() < 0.05 && (g.origin.z > t + 5.0 || g.origin.z < -5.0) {
-        let (face, z_face, depth) = if g.origin.z > t {
-            (5u8, t, g.radius - (g.origin.z - t))
+    // Wyznacz rzeczywisty środek osiowy walca (w STEP CYLINDRICAL_SURFACE origin leży na jednej ze ścianek bocznych tarczy 10 mm!)
+    let (t_min, t_max) = axial_interval(g.origin, g.axis, &g.vertices)?;
+    let t_mid = 0.5 * (t_min + t_max);
+    let mid = Vec3::new(
+        g.origin.x + g.axis.x * t_mid,
+        g.origin.y + g.axis.y * t_mid,
+        g.origin.z + g.axis.z * t_mid,
+    );
+
+    // Surface Lamello P14 (enters top Z=T or bottom Z=0): axis is along X or Y, mid.z outside [0, T]
+    if g.axis.z.abs() < 0.05 && (mid.z > t + 5.0 || mid.z < -5.0) {
+        let (face, z_face, depth) = if mid.z > t {
+            (5u8, t, g.radius - (mid.z - t))
         } else {
-            (6u8, 0.0, g.radius - (-g.origin.z))
+            (6u8, 0.0, g.radius - (-mid.z))
         };
         if !(10.0..=18.0).contains(&depth) {
             return None;
@@ -391,8 +432,8 @@ fn classify_lamello_p14(
         return Some(Operation::LamelloP14 {
             face,
             direction,
-            x: g.origin.x,
-            y: g.origin.y,
+            x: mid.x,
+            y: mid.y,
             z: z_face,
             length: opts.lamello_slot_length,
             width: opts.lamello_surface_width,
@@ -400,16 +441,16 @@ fn classify_lamello_p14(
         });
     }
 
-    // Edge Lamello P14 (enters Face 1..4): axis is along Z, origin.z inside [0, T]
-    if g.axis.z.abs() > 0.95 && g.origin.z > 1.0 && g.origin.z < t - 1.0 {
-        let (face, direction, ex, ey, depth) = if g.origin.y > w + 5.0 {
-            (1u8, 'X', g.origin.x, w, g.radius - (g.origin.y - w))
-        } else if g.origin.y < -5.0 {
-            (2u8, 'X', g.origin.x, 0.0, g.radius - (-g.origin.y))
-        } else if g.origin.x > l + 5.0 {
-            (3u8, 'Y', l, g.origin.y, g.radius - (g.origin.x - l))
-        } else if g.origin.x < -5.0 {
-            (4u8, 'Y', 0.0, g.origin.y, g.radius - (-g.origin.x))
+    // Edge Lamello P14 (enters Face 1..4): axis is along Z, mid.z inside [0, T]
+    if g.axis.z.abs() > 0.95 && mid.z > 1.0 && mid.z < t - 1.0 {
+        let (face, direction, ex, ey, depth) = if mid.y > w + 5.0 {
+            (1u8, 'X', mid.x, w, g.radius - (mid.y - w))
+        } else if mid.y < -5.0 {
+            (2u8, 'X', mid.x, 0.0, g.radius - (-mid.y))
+        } else if mid.x > l + 5.0 {
+            (3u8, 'Y', l, mid.y, g.radius - (mid.x - l))
+        } else if mid.x < -5.0 {
+            (4u8, 'Y', 0.0, mid.y, g.radius - (-mid.x))
         } else {
             return None;
         };
@@ -423,7 +464,7 @@ fn classify_lamello_p14(
             direction,
             x: ex,
             y: ey,
-            z: g.origin.z,
+            z: mid.z,
             length: opts.lamello_slot_length,
             width: opts.lamello_edge_width,
             max_depth: opts.lamello_edge_depth,
@@ -573,12 +614,39 @@ fn round_dia(d: f64) -> f64 {
     (d * 10.0).round() / 10.0
 }
 
+/// Sprawdza, czy pionowy otwór (dx, dy, diameter) z modelu STEP (SolidCraft / TopSolid Wood)
+/// leży w geometrycznym obrębie gniazda krawędziowego Lamello P14 (np. otwór pod klucz Clamex).
+#[allow(clippy::too_many_arguments)]
+pub fn is_hole_in_edge_lamello_zone(
+    lam_face: u8,
+    lam_x: f64,
+    lam_y: f64,
+    hole_x: f64,
+    hole_y: f64,
+    hole_dia: f64,
+    panel_length: f64,
+    panel_width: f64,
+) -> bool {
+    if !(4.0..=10.5).contains(&hole_dia) {
+        return false;
+    }
+    let (along_dist, inward_dist) = match lam_face {
+        1 => ((hole_x - lam_x).abs(), panel_width - hole_y), // Y = Width
+        2 => ((hole_x - lam_x).abs(), hole_y),               // Y = 0
+        3 => ((hole_y - lam_y).abs(), panel_length - hole_x), // X = Length
+        4 => ((hole_y - lam_y).abs(), hole_x),               // X = 0
+        _ => return false,
+    };
+    // Cięciwa gniazda P14 ma ~70 mm (±35 mm), głębokość ~14 mm; otwór Clamex wypada w strefie środkowej gniazda
+    along_dist <= 28.0 && (1.5..=18.5).contains(&inward_dist)
+}
+
 fn should_flip_top_bottom(
     lamellos: &[Operation],
     drills: &[Operation],
     length: f64,
     width: f64,
-    opts: &ConvertOptions,
+    _opts: &ConvertOptions,
 ) -> bool {
     // 1. Surface Lamello P14: only upper spindle (Face 5 / Z+) can mill surface Lamello slots
     let lamello_f5 = lamellos
@@ -593,31 +661,25 @@ fn should_flip_top_bottom(
         return lamello_f6 > lamello_f5;
     }
 
-    // 2. Edge Lamello P14 with Ø6 imbus hole: keep side with more imbus holes facing Z+ (Face 5)
+    // 2. Edge Lamello P14 with Clamex access hole: keep side with more access holes facing Z+ (Face 5)
     let mut imbus_f5 = 0usize;
     let mut imbus_f6 = 0usize;
     for l in lamellos {
         if let Operation::LamelloP14 { face, x, y, .. } = *l {
             if (1..=4).contains(&face) {
-                let (ix, iy) = match face {
-                    1 => (x, width - opts.lamello_imbus_edge_offset),
-                    2 => (x, opts.lamello_imbus_edge_offset),
-                    3 => (length - opts.lamello_imbus_edge_offset, y),
-                    4 => (opts.lamello_imbus_edge_offset, y),
-                    _ => continue,
-                };
                 for d in drills {
                     if let Operation::VerticalDrill {
                         face: df,
                         x: dx,
                         y: dy,
                         diameter,
+                        is_through: false,
                         ..
                     } = *d
                     {
-                        if (dx - ix).hypot(dy - iy) < 3.5
-                            && (diameter - opts.lamello_imbus_diameter).abs() < 0.4
-                        {
+                        if is_hole_in_edge_lamello_zone(
+                            face, x, y, dx, dy, diameter, length, width,
+                        ) {
                             if df == 5 {
                                 imbus_f5 += 1;
                             } else if df == 6 {

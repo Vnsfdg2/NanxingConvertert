@@ -1,4 +1,5 @@
 use crate::config::AppConfig;
+use crate::lamello_p14::{self, Edge, P14};
 use crate::model::{Operation, PanelProgram};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -11,17 +12,27 @@ pub struct ClampBox {
 
 pub fn compute_clamps(panel: &PanelProgram, cfg: &AppConfig) -> [ClampBox; 2] {
     let a = panel.length.max(1.0);
-    let b = panel.width.max(1.0);
-    let wc = (a * (cfg.claw_width_pct / 100.0))
-        .clamp(cfg.claw_min_mm, cfg.claw_max_mm)
-        .min(a * 0.35);
+    // Stała proporcja szerokości do wysokości (96 × 38 mm), odsunięta w całości ponad górną krawędź formatki (Y < 0),
+    // aby nie przysłaniać otworów ani oznaczeń obrzeża F2.
+    const BASE_W_MM: f64 = 96.0;
+    const BASE_H_MM: f64 = 38.0;
+    const GAP_ABOVE_MM: f64 = 26.0;
+    let uniform = if a < 280.0 {
+        (a / 280.0).clamp(0.35, 1.0)
+    } else {
+        1.0
+    };
+    let wc = BASE_W_MM * uniform;
+    let hc = BASE_H_MM * uniform;
+    let gap = GAP_ABOVE_MM * uniform;
+
     let k1 = (cfg.claw_pos_pct / 100.0).clamp(0.05, 0.45);
-    let k2 = 1.0 - k1;
-    [k1, k2].map(|k| ClampBox {
-        x0: a * k - wc * 0.5,
-        x1: a * k + wc * 0.5,
-        y0: b - cfg.claw_grip_mm,
-        y1: b + cfg.claw_depth_mm,
+    let centers = [a * (1.0 - k1), a * k1];
+    centers.map(|cx| ClampBox {
+        x0: cx - wc * 0.5,
+        x1: cx + wc * 0.5,
+        y0: -(gap + hc),
+        y1: -gap,
     })
 }
 
@@ -56,23 +67,24 @@ pub fn op_bbox_mm(op: &Operation, panel: &PanelProgram) -> (f64, f64, f64, f64) 
             direction,
             x,
             y,
-            length,
-            width,
+            max_depth,
             ..
         } => {
-            let (cx, cy) = match face {
-                4 => (7.0, *y),
-                3 => (panel.length - 7.0, *y),
-                2 => (*x, 7.0),
-                1 => (*x, panel.width - 7.0),
-                _ => (*x, *y),
-            };
-            let (hw, hh) = if *direction == 'X' {
-                (*length * 0.5, *width * 0.5)
+            let mut p14 = P14::default();
+            if (1..=4).contains(face) {
+                p14.edge_depth = *max_depth;
+                let (edge, s0) = match face {
+                    1 => (Edge::F3, *x),
+                    2 => (Edge::F1, *x),
+                    3 => (Edge::F2, *y),
+                    _ => (Edge::F4, *y),
+                };
+                let pts = lamello_p14::edge_slot(&p14, edge, panel.length, panel.width, s0, 20);
+                bbox_of_pts(&pts)
             } else {
-                (*width * 0.5, *length * 0.5)
-            };
-            (cx - hw, cy - hh, cx + hw, cy + hh)
+                let pts = lamello_p14::face_socket(&p14, *x, *y, *direction == 'X');
+                bbox_of_pts(&pts)
+            }
         }
         Operation::Groove {
             x,
@@ -91,4 +103,18 @@ pub fn op_bbox_mm(op: &Operation, panel: &PanelProgram) -> (f64, f64, f64, f64) 
             )
         }
     }
+}
+
+fn bbox_of_pts(pts: &[[f64; 2]]) -> (f64, f64, f64, f64) {
+    let mut x0 = f64::INFINITY;
+    let mut y0 = f64::INFINITY;
+    let mut x1 = f64::NEG_INFINITY;
+    let mut y1 = f64::NEG_INFINITY;
+    for p in pts {
+        x0 = x0.min(p[0]);
+        y0 = y0.min(p[1]);
+        x1 = x1.max(p[0]);
+        y1 = y1.max(p[1]);
+    }
+    (x0, y0, x1, y1)
 }

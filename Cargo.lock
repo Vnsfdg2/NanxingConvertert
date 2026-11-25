@@ -1883,7 +1883,7 @@ dependencies = [
 
 [[package]]
 name = "nanxing-app"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "eframe",
@@ -1894,7 +1894,7 @@ dependencies = [
 
 [[package]]
 name = "nanxing-core"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "csv",
