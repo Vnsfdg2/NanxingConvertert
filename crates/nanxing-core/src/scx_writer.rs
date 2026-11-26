@@ -18,6 +18,12 @@ fn fmt_num(v: f64) -> String {
     }
 }
 
+/// Formatuje liczbę z przecinkiem dziesiętnym (wymagane przez parser `Type="1002"` w CAM wiertarki Nanxing
+/// na polskim systemie Windows — z kropką CAM zerował `Width="9.8"` oraz `Width="10.15"` na `0`).
+fn fmt_num_comma(v: f64) -> String {
+    fmt_num(v).replace('.', ",")
+}
+
 pub fn render_scx_xml(panel: &PanelProgram) -> String {
     let mut out = String::with_capacity(4096);
     out.push_str("<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n");
@@ -127,9 +133,9 @@ pub fn render_scx_xml(panel: &PanelProgram) -> String {
                         fmt_num(*x),
                         fmt_num(*y),
                         fmt_num(*z),
-                        fmt_num(*length),
-                        fmt_num(*width),
-                        fmt_num(*max_depth),
+                        fmt_num_comma(*length),
+                        fmt_num_comma(*width),
+                        fmt_num_comma(*max_depth),
                     ));
                 }
                 Operation::Groove {

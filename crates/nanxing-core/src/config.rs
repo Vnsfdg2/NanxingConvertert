@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use crate::dxf_writer::{DxfContourMode, DxfExportOptions};
 use crate::model::{ConvertOptions, GrainDirection};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -10,6 +11,27 @@ pub struct AppConfig {
     pub default_save_dir: String,
     pub default_csv_dir: String,
     pub output_subfolder: String,
+
+    // [Dxf]
+    pub dxf_contour_mode: DxfContourMode,
+    pub dxf_hide_grain_arrow: bool,
+    pub dxf_split_drill_and_mill: bool,
+    pub dxf_depth_layers: bool,
+    pub dxf_draw_drills: bool,
+    pub dxf_draw_side_holes: bool,
+    pub dxf_draw_milling: bool,
+    pub dxf_include_bottom_ops: bool,
+    pub dxf_drill_max_dia_mm: f64,
+    pub dxf_arrow_scale_large: f64,
+    pub dxf_arrow_scale_small: f64,
+    pub dxf_layer_rozkroj: String,
+    pub dxf_layer_wiercenie: String,
+    pub dxf_layer_frezowanie: String,
+    pub dxf_layer_wiercenie_bok: String,
+    pub dxf_layer_lamello_bok: String,
+    pub dxf_layer_lamello_pow: String,
+    pub dxf_layer_widmo: String,
+    pub dxf_layer_strzalka: String,
 
     // [LamelloP14]
     pub lamello_surface_width: f64,
@@ -59,7 +81,27 @@ impl Default for AppConfig {
             default_open_dir: r"D:\WorkerResource\ALKATRAS_BSOLID".to_string(),
             default_save_dir: String::new(),
             default_csv_dir: r"D:\WorkerResource\ALKATRAS_BSOLID".to_string(),
-            output_subfolder: "SCX_NANXING".to_string(),
+            output_subfolder: "SCX".to_string(),
+
+            dxf_contour_mode: DxfContourMode::RectFormat,
+            dxf_hide_grain_arrow: false,
+            dxf_split_drill_and_mill: true,
+            dxf_depth_layers: false,
+            dxf_draw_drills: true,
+            dxf_draw_side_holes: true,
+            dxf_draw_milling: true,
+            dxf_include_bottom_ops: true,
+            dxf_drill_max_dia_mm: 36.0,
+            dxf_arrow_scale_large: 0.40,
+            dxf_arrow_scale_small: 0.85,
+            dxf_layer_rozkroj: "ROZKROJ".to_string(),
+            dxf_layer_wiercenie: "WIERCENIE".to_string(),
+            dxf_layer_frezowanie: "FREZOWANIE".to_string(),
+            dxf_layer_wiercenie_bok: "WIERCENIE_BOK".to_string(),
+            dxf_layer_lamello_bok: "LAMELLO_BOK".to_string(),
+            dxf_layer_lamello_pow: "LAMELLO_POW".to_string(),
+            dxf_layer_widmo: "INSETS D 1.0".to_string(),
+            dxf_layer_strzalka: "STRZALKA".to_string(),
 
             lamello_surface_width: 9.8,
             lamello_surface_depth: 14.0,
@@ -148,6 +190,30 @@ impl AppConfig {
         }
     }
 
+    pub fn to_dxf_options(&self) -> DxfExportOptions {
+        DxfExportOptions {
+            contour_mode: self.dxf_contour_mode,
+            hide_grain_arrow: self.dxf_hide_grain_arrow,
+            split_drill_and_mill: self.dxf_split_drill_and_mill,
+            depth_layers: self.dxf_depth_layers,
+            draw_drills: self.dxf_draw_drills,
+            draw_side_holes: self.dxf_draw_side_holes,
+            draw_milling: self.dxf_draw_milling,
+            include_bottom_ops: self.dxf_include_bottom_ops,
+            drill_max_dia_mm: self.dxf_drill_max_dia_mm,
+            arrow_scale_large: self.dxf_arrow_scale_large,
+            arrow_scale_small: self.dxf_arrow_scale_small,
+            layer_rozkroj: self.dxf_layer_rozkroj.clone(),
+            layer_wiercenie: self.dxf_layer_wiercenie.clone(),
+            layer_frezowanie: self.dxf_layer_frezowanie.clone(),
+            layer_wiercenie_bok: self.dxf_layer_wiercenie_bok.clone(),
+            layer_lamello_bok: self.dxf_layer_lamello_bok.clone(),
+            layer_lamello_pow: self.dxf_layer_lamello_pow.clone(),
+            layer_widmo: self.dxf_layer_widmo.clone(),
+            layer_strzalka: self.dxf_layer_strzalka.clone(),
+        }
+    }
+
     pub fn to_ini(&self) -> String {
         format!(
             "# NanxingConvertert — plik konfiguracyjny\r\n\
@@ -156,6 +222,27 @@ impl AppConfig {
              default_save_dir = {}\r\n\
              default_csv_dir = {}\r\n\
              output_subfolder = {}\r\n\
+             \r\n\
+             [Dxf]\r\n\
+             dxf_contour_mode = {}\r\n\
+             dxf_hide_grain_arrow = {}\r\n\
+             dxf_split_drill_and_mill = {}\r\n\
+             dxf_depth_layers = {}\r\n\
+             dxf_draw_drills = {}\r\n\
+             dxf_draw_side_holes = {}\r\n\
+             dxf_draw_milling = {}\r\n\
+             dxf_include_bottom_ops = {}\r\n\
+             dxf_drill_max_dia_mm = {}\r\n\
+             dxf_arrow_scale_large = {}\r\n\
+             dxf_arrow_scale_small = {}\r\n\
+             dxf_layer_rozkroj = {}\r\n\
+             dxf_layer_wiercenie = {}\r\n\
+             dxf_layer_frezowanie = {}\r\n\
+             dxf_layer_wiercenie_bok = {}\r\n\
+             dxf_layer_lamello_bok = {}\r\n\
+             dxf_layer_lamello_pow = {}\r\n\
+             dxf_layer_widmo = {}\r\n\
+             dxf_layer_strzalka = {}\r\n\
              \r\n\
              [LamelloP14]\r\n\
              surface_width = {}\r\n\
@@ -201,6 +288,25 @@ impl AppConfig {
             self.default_save_dir,
             self.default_csv_dir,
             self.output_subfolder,
+            self.dxf_contour_mode.as_ini_str(),
+            self.dxf_hide_grain_arrow,
+            self.dxf_split_drill_and_mill,
+            self.dxf_depth_layers,
+            self.dxf_draw_drills,
+            self.dxf_draw_side_holes,
+            self.dxf_draw_milling,
+            self.dxf_include_bottom_ops,
+            self.dxf_drill_max_dia_mm,
+            self.dxf_arrow_scale_large,
+            self.dxf_arrow_scale_small,
+            self.dxf_layer_rozkroj,
+            self.dxf_layer_wiercenie,
+            self.dxf_layer_frezowanie,
+            self.dxf_layer_wiercenie_bok,
+            self.dxf_layer_lamello_bok,
+            self.dxf_layer_lamello_pow,
+            self.dxf_layer_widmo,
+            self.dxf_layer_strzalka,
             self.lamello_surface_width,
             self.lamello_surface_depth,
             self.lamello_edge_width,
@@ -259,7 +365,104 @@ impl AppConfig {
                 "default_open_dir" => cfg.default_open_dir = val.to_string(),
                 "default_save_dir" => cfg.default_save_dir = val.to_string(),
                 "default_csv_dir" => cfg.default_csv_dir = val.to_string(),
-                "output_subfolder" => cfg.output_subfolder = val.to_string(),
+                "output_subfolder" => {
+                    cfg.output_subfolder = if val.eq_ignore_ascii_case("SCX_NANXING") || val.is_empty() {
+                        "SCX".to_string()
+                    } else {
+                        val.to_string()
+                    };
+                }
+                "dxf_contour_mode" => cfg.dxf_contour_mode = DxfContourMode::from_ini_str(val),
+                "dxf_hide_grain_arrow" => {
+                    if let Ok(b) = val.parse() {
+                        cfg.dxf_hide_grain_arrow = b;
+                    }
+                }
+                "dxf_split_drill_and_mill" => {
+                    if let Ok(b) = val.parse() {
+                        cfg.dxf_split_drill_and_mill = b;
+                    }
+                }
+                "dxf_depth_layers" => {
+                    if let Ok(b) = val.parse() {
+                        cfg.dxf_depth_layers = b;
+                    }
+                }
+                "dxf_draw_drills" => {
+                    if let Ok(b) = val.parse() {
+                        cfg.dxf_draw_drills = b;
+                    }
+                }
+                "dxf_draw_side_holes" => {
+                    if let Ok(b) = val.parse() {
+                        cfg.dxf_draw_side_holes = b;
+                    }
+                }
+                "dxf_draw_milling" => {
+                    if let Ok(b) = val.parse() {
+                        cfg.dxf_draw_milling = b;
+                    }
+                }
+                "dxf_include_bottom_ops" => {
+                    if let Ok(b) = val.parse() {
+                        cfg.dxf_include_bottom_ops = b;
+                    }
+                }
+                "dxf_drill_max_dia_mm" => {
+                    if let Ok(n) = val.parse() {
+                        cfg.dxf_drill_max_dia_mm = n;
+                    }
+                }
+                "dxf_arrow_scale_large" => {
+                    if let Ok(n) = val.parse() {
+                        cfg.dxf_arrow_scale_large = n;
+                    }
+                }
+                "dxf_arrow_scale_small" => {
+                    if let Ok(n) = val.parse() {
+                        cfg.dxf_arrow_scale_small = n;
+                    }
+                }
+                "dxf_layer_rozkroj" => {
+                    if !val.is_empty() {
+                        cfg.dxf_layer_rozkroj = val.to_string();
+                    }
+                }
+                "dxf_layer_wiercenie" => {
+                    if !val.is_empty() {
+                        cfg.dxf_layer_wiercenie = val.to_string();
+                    }
+                }
+                "dxf_layer_frezowanie" => {
+                    if !val.is_empty() {
+                        cfg.dxf_layer_frezowanie = val.to_string();
+                    }
+                }
+                "dxf_layer_wiercenie_bok" => {
+                    if !val.is_empty() {
+                        cfg.dxf_layer_wiercenie_bok = val.to_string();
+                    }
+                }
+                "dxf_layer_lamello_bok" => {
+                    if !val.is_empty() {
+                        cfg.dxf_layer_lamello_bok = val.to_string();
+                    }
+                }
+                "dxf_layer_lamello_pow" => {
+                    if !val.is_empty() {
+                        cfg.dxf_layer_lamello_pow = val.to_string();
+                    }
+                }
+                "dxf_layer_widmo" => {
+                    if !val.is_empty() {
+                        cfg.dxf_layer_widmo = val.to_string();
+                    }
+                }
+                "dxf_layer_strzalka" => {
+                    if !val.is_empty() {
+                        cfg.dxf_layer_strzalka = val.to_string();
+                    }
+                }
                 "surface_width" => {
                     if let Ok(n) = val.parse() {
                         cfg.lamello_surface_width = n;

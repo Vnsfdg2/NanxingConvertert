@@ -2,6 +2,7 @@ pub mod clamps;
 pub mod config;
 pub mod csv_edges;
 pub mod detector;
+pub mod dxf_writer;
 pub mod lamello_p14;
 pub mod model;
 pub mod scx_writer;
@@ -12,10 +13,39 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::detector::detect_panel_program;
+use crate::dxf_writer::{DxfExportOptions, render_dxf};
 use crate::model::{ConvertOptions, PanelProgram};
 use crate::scx_writer::render_scx_xml;
 use crate::step_parser::{NormalizedStepSolid, parse_and_normalize_step};
-use crate::transforms::{PanelTransform, apply_panel_transform, push_simplified_transform};
+use crate::transforms::{
+    PanelTransform, ScxProgramPass, apply_panel_transform, build_scx_passes,
+    push_simplified_transform,
+};
+
+pub const SCX_FOLDER_NAME: &str = "SCX";
+pub const DXF_FOLDER_NAME: &str = "DXF";
+
+/// Wyznacza parę katalogów wyjściowych `(<baza>\SCX, <baza>\DXF)` zgodnie z zasadą 3-literowych nazw bez dopisków.
+/// Jeśli `base_dir` sam wskazuje już na podfolder `SCX`, `DXF`, `SCX_NANXING` lub `DXF_BSOLID`, pobiera jego rodzica.
+pub fn resolve_export_dirs(base_dir: &Path) -> (PathBuf, PathBuf) {
+    let is_known_sub = base_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| {
+            matches!(
+                n.to_ascii_uppercase().as_str(),
+                "SCX" | "DXF" | "SCX_NANXING" | "DXF_BSOLID"
+            )
+        })
+        .unwrap_or(false);
+
+    let root = if is_known_sub {
+        base_dir.parent().unwrap_or(base_dir)
+    } else {
+        base_dir
+    };
+    (root.join(SCX_FOLDER_NAME), root.join(DXF_FOLDER_NAME))
+}
 
 /// Wczytany plik STEP gotowy do podglądu i wielokrotnego przeliczania po zmianie ustawień.
 #[derive(Debug, Clone)]
@@ -103,24 +133,63 @@ pub fn load_step_panel(
     })
 }
 
-/// Zapisuje wygenerowany program `PanelProgram` do pliku `.scx` w `output_dir`.
-/// Zwraca `Ok(None)`, jeśli formatka jest pusta i `skip_empty_panels == true`.
+/// Zapisuje wygenerowany program `PanelProgram` do pliku (lub 2 plików: `<stem>.scx` + `<stem>_STR2.scx`
+/// przy dwustronnym Lamello P14) w katalogu `output_dir`.
+pub fn save_program_scx_passes(
+    program: &PanelProgram,
+    file_stem: &str,
+    output_dir: &Path,
+    opts: &ConvertOptions,
+) -> Result<Vec<PathBuf>, String> {
+    if opts.skip_empty_panels && program.operations.is_empty() {
+        return Ok(Vec::new());
+    }
+    fs::create_dir_all(output_dir)
+        .map_err(|e| format!("Błąd tworzenia folderu '{}': {}", output_dir.display(), e))?;
+
+    let passes: Vec<ScxProgramPass> = build_scx_passes(program, opts);
+    let mut written = Vec::with_capacity(passes.len());
+    for pass in &passes {
+        if opts.skip_empty_panels && pass.scx_program.operations.is_empty() {
+            continue;
+        }
+        let out_path = output_dir.join(format!("{}{}.scx", file_stem, pass.file_suffix));
+        let xml = render_scx_xml(&pass.scx_program);
+        fs::write(&out_path, xml.as_bytes())
+            .map_err(|e| format!("Błąd zapisu '{}': {}", out_path.display(), e))?;
+        written.push(out_path);
+    }
+    Ok(written)
+}
+
+/// Zapisuje wygenerowany program `PanelProgram` do pliku `.scx` (oraz automatycznie `_STR2.scx`, jeśli dwustronne Lamello).
+/// Zwraca ścieżkę głównego pliku `.scx` lub `Ok(None)`, jeśli formatka jest pusta i `skip_empty_panels == true`.
 pub fn save_program_scx(
     program: &PanelProgram,
     file_stem: &str,
     output_dir: &Path,
     skip_empty_panels: bool,
 ) -> Result<Option<PathBuf>, String> {
-    if skip_empty_panels && program.operations.is_empty() {
-        return Ok(None);
-    }
+    let mut opts = ConvertOptions::default();
+    opts.skip_empty_panels = skip_empty_panels;
+    let paths = save_program_scx_passes(program, file_stem, output_dir, &opts)?;
+    Ok(paths.into_iter().next())
+}
+
+/// Zapisuje płaski rysunek 2D DXF (pod bSolid / naklejki orientacyjne) w `output_dir`.
+pub fn save_program_dxf(
+    program: &PanelProgram,
+    file_stem: &str,
+    output_dir: &Path,
+    opts: &DxfExportOptions,
+) -> Result<PathBuf, String> {
     fs::create_dir_all(output_dir)
         .map_err(|e| format!("Błąd tworzenia folderu '{}': {}", output_dir.display(), e))?;
-    let out_path = output_dir.join(format!("{}.scx", file_stem));
-    let xml = render_scx_xml(program);
-    fs::write(&out_path, xml.as_bytes())
+    let out_path = output_dir.join(format!("{}.dxf", file_stem));
+    let dxf = render_dxf(program, opts);
+    fs::write(&out_path, dxf.as_bytes())
         .map_err(|e| format!("Błąd zapisu '{}': {}", out_path.display(), e))?;
-    Ok(Some(out_path))
+    Ok(out_path)
 }
 
 /// Jednoetapowa konwersja pliku `.step` → `.scx` (używana także przez CLI).
@@ -172,13 +241,128 @@ mod tests {
     fn test_ini_roundtrip() {
         let mut cfg = AppConfig::default();
         cfg.default_open_dir = r"C:\Projekty\Test\STEP".into();
-        cfg.default_save_dir = r"C:\Projekty\Test\SCX".into();
+        cfg.default_save_dir = r"C:\Projekty\Test".into();
         cfg.lamello_surface_depth = 14.1;
+        cfg.dxf_depth_layers = true;
+        cfg.dxf_layer_rozkroj = "CUT".into();
         let ini = cfg.to_ini();
         let parsed = AppConfig::from_ini(&ini);
         assert_eq!(parsed.default_open_dir, r"C:\Projekty\Test\STEP");
-        assert_eq!(parsed.default_save_dir, r"C:\Projekty\Test\SCX");
+        assert_eq!(parsed.default_save_dir, r"C:\Projekty\Test");
         assert_eq!(parsed.lamello_surface_depth, 14.1);
+        assert!(parsed.dxf_depth_layers);
+        assert_eq!(parsed.dxf_layer_rozkroj, "CUT");
+    }
+
+    #[test]
+    fn test_resolve_export_dirs_always_three_letters() {
+        use std::path::Path;
+        let (scx1, dxf1) = super::resolve_export_dirs(Path::new(r"D:\Job1\STEP"));
+        assert_eq!(scx1, Path::new(r"D:\Job1\STEP\SCX"));
+        assert_eq!(dxf1, Path::new(r"D:\Job1\STEP\DXF"));
+
+        // Gdy użytkownik wskazał podfolder SCX lub stary SCX_NANXING / DXF_BSOLID — wraca do rodzica:
+        let (scx2, dxf2) = super::resolve_export_dirs(Path::new(r"D:\Job1\SCX_NANXING"));
+        assert_eq!(scx2, Path::new(r"D:\Job1\SCX"));
+        assert_eq!(dxf2, Path::new(r"D:\Job1\DXF"));
+
+        let (scx3, dxf3) = super::resolve_export_dirs(Path::new(r"D:\Job1\DXF"));
+        assert_eq!(scx3, Path::new(r"D:\Job1\SCX"));
+        assert_eq!(dxf3, Path::new(r"D:\Job1\DXF"));
+    }
+
+    #[test]
+    fn test_dual_surface_lamello_splits_into_two_scx_passes() {
+        use crate::model::{ConvertOptions, EdgeBanding, GrainDirection, Operation, PanelProgram, Point2};
+        use crate::transforms::build_scx_passes;
+
+        let panel = PanelProgram {
+            id: "S6_25".into(),
+            name: "S6_25_DOLNY".into(),
+            length: 1582.0,
+            width: 290.0,
+            thickness: 19.0,
+            material: None,
+            grain: GrainDirection::Length,
+            outline: vec![
+                Point2::new(1582.0, 0.0),
+                Point2::new(0.0, 0.0),
+                Point2::new(0.0, 290.0),
+                Point2::new(1582.0, 290.0),
+            ],
+            operations: vec![
+                Operation::LamelloP14 {
+                    face: 4,
+                    direction: 'Y',
+                    x: 0.0,
+                    y: 70.0,
+                    z: 9.5,
+                    length: 66.0,
+                    width: 10.15,
+                    max_depth: 14.0,
+                },
+                Operation::LamelloP14 {
+                    face: 5,
+                    direction: 'Y',
+                    x: 524.1667,
+                    y: 70.0,
+                    z: 19.0,
+                    length: 66.0,
+                    width: 9.8,
+                    max_depth: 14.0,
+                },
+                Operation::LamelloP14 {
+                    face: 6,
+                    direction: 'Y',
+                    x: 71.5,
+                    y: 226.0,
+                    z: 0.0,
+                    length: 66.0,
+                    width: 9.8,
+                    max_depth: 14.0,
+                },
+            ],
+            edges: EdgeBanding::default(),
+            warnings: vec![],
+            flipped_top_bottom: false,
+        };
+
+        let passes = build_scx_passes(&panel, &ConvertOptions::default());
+        assert_eq!(passes.len(), 2);
+
+        // Pass 1: ma gniazdo krawędziowe i górne (2 op.), a dolne jest duchem (1 ghost)
+        assert_eq!(passes[0].file_suffix, "");
+        assert_eq!(passes[0].scx_program.operations.len(), 2);
+        assert_eq!(passes[0].ghost_operations.len(), 1);
+        assert!(
+            !passes[0]
+                .scx_program
+                .operations
+                .iter()
+                .any(|o| matches!(o, Operation::LamelloP14 { face: 6, .. }))
+        );
+
+        // Pass 2 (_STR2): obrót 180° wokół dłuższego boku (1582 mm -> X bez zmian = 71.5, Y = 290 - 226 = 64.0, Face = 5, Z = 19)
+        assert_eq!(passes[1].file_suffix, "_STR2");
+        assert_eq!(passes[1].scx_program.id, "S6_25_2");
+        assert_eq!(passes[1].scx_program.name, "S6_25_DOLNY_STR2");
+        assert_eq!(passes[1].scx_program.operations.len(), 1);
+        assert_eq!(passes[1].ghost_operations.len(), 2);
+        if let Operation::LamelloP14 { face, x, y, z, .. } = passes[1].scx_program.operations[0] {
+            assert_eq!(face, 5);
+            assert!((x - 71.5).abs() < 1e-4);
+            assert!((y - 64.0).abs() < 1e-4);
+            assert!((z - 19.0).abs() < 1e-4);
+        } else {
+            panic!("Oczekiwano LamelloP14 w Pass 2");
+        }
+
+        // Sprawdzenie zapisu przecinków w Width="9,8" oraz Width="10,15" dla CAM wiertarki Nanxing:
+        let xml1 = crate::scx_writer::render_scx_xml(&passes[0].scx_program);
+        assert!(xml1.contains("Width=\"10,15\""));
+        assert!(xml1.contains("Width=\"9,8\""));
+        let xml2 = crate::scx_writer::render_scx_xml(&passes[1].scx_program);
+        assert!(xml2.contains("Width=\"9,8\""));
     }
 
     #[test]

@@ -314,13 +314,18 @@ pub fn recompute_panel_warnings(panel: &mut PanelProgram, opts: &ConvertOptions)
         ));
     }
 
-    let has_f6_lamello = panel
+    let f6_lamello_cnt = panel
         .operations
         .iter()
-        .any(|o| matches!(o, Operation::LamelloP14 { face: 6, .. }));
-    if has_f6_lamello {
+        .filter(|o| matches!(o, Operation::LamelloP14 { face: 6, .. }))
+        .count();
+    let other_ops_cnt = panel.operations.len().saturating_sub(f6_lamello_cnt);
+
+    // Ostrzegaj wyłącznie wtedy, gdy formatka ma TYLKO gniazda od spodu i żadnych innych operacji
+    // (przy dwustronnym Lamello program automatycznie dzieli obróbkę na 2 przejścia SCX bez zbędnego alarmu).
+    if f6_lamello_cnt > 0 && other_ops_cnt == 0 {
         panel.warnings.push(
-            "UWAGA: Gniazdo powierzchniowe Lamello P14 znajduje się od spodu (Face 6)!".to_string(),
+            "UWAGA: Gniazda powierzchniowe Lamello P14 są od spodu (Face 6) — obróć formatkę do góry nogami.".to_string(),
         );
     }
 
@@ -586,4 +591,115 @@ fn is_axis_aligned_rectangle(outline: &[Point2], length: f64, width: f64) -> boo
 
 fn clean_zero(v: f64) -> f64 {
     if v.abs() < 1e-7 { 0.0 } else { v }
+}
+
+/// Pojedyncze przejście obróbcze SCX dla wiertarki Nanxing (1 lub 2 przejścia przy dwustronnym Lamello P14).
+#[derive(Debug, Clone)]
+pub struct ScxProgramPass {
+    /// Sufiks nazwy pliku ("" dla 1. programu, "_STR2" dla 2. programu po obrocie o 180°).
+    pub file_suffix: &'static str,
+    /// Program przekazywany do generatora XML `.scx` (zawiera wyłącznie operacje wykonywane w tym przejściu).
+    pub scx_program: PanelProgram,
+    /// Operacje z drugiej strony / drugiego przejścia widoczne w podglądzie CAD jako półprzezroczyste duchy.
+    pub ghost_operations: Vec<Operation>,
+    /// Oznacza drugi program (`_STR2`) po fizycznym obrocie o 180° wokół dłuższego boku.
+    pub is_second_side_pass: bool,
+}
+
+/// Zwraca `true`, jeśli formatka wymaga wygenerowania dwóch programów SCX (posiada gniazda powierzchniowe
+/// Lamello P14 na dolnej ścianie `Face 6` oraz inne operacje wykonywane w pierwszym przejściu).
+pub fn has_dual_scx_passes(panel: &PanelProgram) -> bool {
+    let f6_lam = panel
+        .operations
+        .iter()
+        .filter(|o| matches!(o, Operation::LamelloP14 { face: 6, .. }))
+        .count();
+    let other_ops = panel.operations.len().saturating_sub(f6_lam);
+    f6_lam > 0 && other_ops > 0
+}
+
+/// Obraca formatkę o 180° wokół jej dłuższego boku:
+/// - gdy `length >= width` (dłuższy bok wzdłuż X): `X -> X, Y -> W - Y, Z -> T - Z` (`FlipUpsideDown`),
+/// - gdy `width > length` (dłuższy bok wzdłuż Y): `X -> L - X, Y -> Y, Z -> T - Z`.
+pub fn flip_around_longer_edge(panel: &mut PanelProgram, opts: &ConvertOptions) {
+    if panel.length + 1e-6 >= panel.width {
+        apply_panel_transform(panel, None, PanelTransform::FlipUpsideDown, opts);
+    } else {
+        apply_panel_transform(panel, None, PanelTransform::FlipUpsideDown, opts);
+        apply_panel_transform(panel, None, PanelTransform::Rotate90Plus, opts);
+        apply_panel_transform(panel, None, PanelTransform::Rotate90Plus, opts);
+    }
+}
+
+/// Dzieli `PanelProgram` na 1 lub 2 przejścia SCX:
+/// - Przejście 1 (`""`): wszystkie operacje oprócz dolnych gniazd powierzchniowych `LamelloP14 (Face 6)`,
+///   które trafiają do `ghost_operations` jako półprzezroczyste duchy.
+/// - Przejście 2 (`"_STR2"`, `ID` z `"_2"`): formatka obrócona o 180° wokół dłuższego boku, zawierająca w `scx_program`
+///   WYŁĄCZNIE gniazda Lamello z drugiej strony (teraz na `Face 5`), a pozostałe operacje z 1. strony w `ghost_operations`.
+pub fn build_scx_passes(panel: &PanelProgram, opts: &ConvertOptions) -> Vec<ScxProgramPass> {
+    if !has_dual_scx_passes(panel) {
+        return vec![ScxProgramPass {
+            file_suffix: "",
+            scx_program: panel.clone(),
+            ghost_operations: Vec::new(),
+            is_second_side_pass: false,
+        }];
+    }
+
+    // ── Pass 1: Strona główna (większa liczba operacji na górze) ──
+    let mut pass1_prog = panel.clone();
+    let mut pass1_ops = Vec::with_capacity(panel.operations.len());
+    let mut pass1_ghosts = Vec::new();
+    let mut is_second_pass_op = Vec::with_capacity(panel.operations.len());
+
+    for op in &panel.operations {
+        if matches!(op, Operation::LamelloP14 { face: 6, .. }) {
+            pass1_ghosts.push(op.clone());
+            is_second_pass_op.push(true);
+        } else {
+            pass1_ops.push(op.clone());
+            is_second_pass_op.push(false);
+        }
+    }
+    pass1_prog.operations = pass1_ops;
+    recompute_panel_warnings(&mut pass1_prog, opts);
+
+    // ── Pass 2: Druga strona po obrocie o 180° wokół dłuższego boku ──
+    let mut flipped_full = panel.clone();
+    flip_around_longer_edge(&mut flipped_full, opts);
+    flipped_full.id = format!("{}_2", panel.id);
+    flipped_full.name = format!("{}_STR2", panel.name);
+
+    let mut pass2_ops = Vec::new();
+    let mut pass2_ghosts = Vec::new();
+    for (op, &for_pass2) in flipped_full
+        .operations
+        .iter()
+        .zip(is_second_pass_op.iter())
+    {
+        if for_pass2 {
+            pass2_ops.push(op.clone());
+        } else {
+            pass2_ghosts.push(op.clone());
+        }
+    }
+
+    let mut pass2_prog = flipped_full;
+    pass2_prog.operations = pass2_ops;
+    recompute_panel_warnings(&mut pass2_prog, opts);
+
+    vec![
+        ScxProgramPass {
+            file_suffix: "",
+            scx_program: pass1_prog,
+            ghost_operations: pass1_ghosts,
+            is_second_side_pass: false,
+        },
+        ScxProgramPass {
+            file_suffix: "_STR2",
+            scx_program: pass2_prog,
+            ghost_operations: pass2_ghosts,
+            is_second_side_pass: true,
+        },
+    ]
 }

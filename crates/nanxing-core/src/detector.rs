@@ -648,7 +648,6 @@ fn should_flip_top_bottom(
     width: f64,
     _opts: &ConvertOptions,
 ) -> bool {
-    // 1. Surface Lamello P14: only upper spindle (Face 5 / Z+) can mill surface Lamello slots
     let lamello_f5 = lamellos
         .iter()
         .filter(|o| matches!(o, Operation::LamelloP14 { face: 5, .. }))
@@ -657,11 +656,14 @@ fn should_flip_top_bottom(
         .iter()
         .filter(|o| matches!(o, Operation::LamelloP14 { face: 6, .. }))
         .count();
-    if lamello_f6 != lamello_f5 {
-        return lamello_f6 > lamello_f5;
+
+    // 1a. Jeśli gniazda powierzchniowe Lamello P14 występują TYLKO po jednej stronie,
+    //     ustawiamy tę stronę na górze (Face 5), aby wykonać całość w jednym programie SCX.
+    if (lamello_f5 == 0) != (lamello_f6 == 0) {
+        return lamello_f6 > 0;
     }
 
-    // 2. Edge Lamello P14 with Clamex access hole: keep side with more access holes facing Z+ (Face 5)
+    // Zliczamy otwory pod klucz Clamex oraz wiercenia nieprzelotowe na obu płaszczyznach:
     let mut imbus_f5 = 0usize;
     let mut imbus_f6 = 0usize;
     for l in lamellos {
@@ -691,11 +693,7 @@ fn should_flip_top_bottom(
             }
         }
     }
-    if imbus_f6 != imbus_f5 {
-        return imbus_f6 > imbus_f5;
-    }
 
-    // 3. Place the face with MORE blind vertical holes on Z+ (Face 5)
     let blind_f5 = drills
         .iter()
         .filter(|d| {
@@ -722,6 +720,26 @@ fn should_flip_top_bottom(
             )
         })
         .count();
+
+    // 1b. Jeśli gniazda powierzchniowe Lamello P14 są PO OBU STRONACH (powstaną 2 programy SCX),
+    //     jako główną górną ścianę (Program 1) wybieramy ścianę z większą łączną liczbą operacji!
+    if lamello_f5 > 0 && lamello_f6 > 0 {
+        let total_f5 = lamello_f5 + imbus_f5 + blind_f5;
+        let total_f6 = lamello_f6 + imbus_f6 + blind_f6;
+        if total_f6 != total_f5 {
+            return total_f6 > total_f5;
+        }
+        if lamello_f6 != lamello_f5 {
+            return lamello_f6 > lamello_f5;
+        }
+    }
+
+    // 2. Otwory pod klucz Clamex (w obrębie gniazd krawędziowych)
+    if imbus_f6 != imbus_f5 {
+        return imbus_f6 > imbus_f5;
+    }
+
+    // 3. Więcej nieprzelotowych wierceń pionowych na górze (Face 5)
     blind_f6 > blind_f5
 }
 

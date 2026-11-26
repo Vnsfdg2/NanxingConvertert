@@ -4,6 +4,7 @@ use egui::{
     RichText, ScrollArea, Sense, Stroke, StrokeKind, Vec2,
 };
 use nanxing_core::config::AppConfig;
+use nanxing_core::dxf_writer::DxfContourMode;
 use nanxing_core::format_num;
 use std::collections::HashMap;
 
@@ -29,6 +30,7 @@ const COL_GAP: f32 = 16.0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SettingsCategory {
     Paths,
+    DxfBsolid,
     RulesDrilling,
     Lamello,
     MachineClamps,
@@ -36,8 +38,9 @@ pub enum SettingsCategory {
 }
 
 impl SettingsCategory {
-    pub const ALL: [SettingsCategory; 5] = [
+    pub const ALL: [SettingsCategory; 6] = [
         SettingsCategory::Paths,
+        SettingsCategory::DxfBsolid,
         SettingsCategory::RulesDrilling,
         SettingsCategory::Lamello,
         SettingsCategory::MachineClamps,
@@ -47,6 +50,7 @@ impl SettingsCategory {
     pub fn label(self) -> &'static str {
         match self {
             Self::Paths => "Ścieżki i Eksport",
+            Self::DxfBsolid => "Eksport DXF",
             Self::RulesDrilling => "Reguły i Wiercenie",
             Self::Lamello => "Lamello P14",
             Self::MachineClamps => "Maszyna i Mocowanie",
@@ -56,7 +60,8 @@ impl SettingsCategory {
 
     pub fn heading_upper(self) -> &'static str {
         match self {
-            Self::Paths => "ŚCIEŻKI I EKSPORT",
+            Self::Paths => "ŚCIEŻKI I EKSPORT (PODFOLDERY SCX / DXF)",
+            Self::DxfBsolid => "EKSPORT 2D DXF (BSOLID / NAKLEJKI)",
             Self::RulesDrilling => "REGUŁY I WIERCENIE",
             Self::Lamello => "LAMELLO P14",
             Self::MachineClamps => "MASZYNA I MOCOWANIE",
@@ -354,8 +359,8 @@ impl SettingsDialogState {
                                                                 path_row(
                                                                     ui,
                                                                     row_w,
-                                                                    "Domyślny folder zapisu / eksportu SCX",
-                                                                    "Ścieżka docelowa eksportowanych programów .scx (gdy pusta — podfolder obok pliku STEP).",
+                                                                    "Katalog bazowy zapisu (SCX i DXF)",
+                                                                    "Gdy puste — obok plików STEP automatycznie powstaną podfoldery SCX oraz DXF (zawsze 3-literowe nazwy).",
                                                                     &mut cfg.default_save_dir,
                                                                     &def.default_save_dir,
                                                                 );
@@ -367,13 +372,176 @@ impl SettingsDialogState {
                                                                     &mut cfg.default_csv_dir,
                                                                     &def.default_csv_dir,
                                                                 );
+                                                            }
+                                                            SettingsCategory::DxfBsolid => {
+                                                                let mut step_contour = cfg.dxf_contour_mode == DxfContourMode::StepOutline;
+                                                                let def_step_contour = def.dxf_contour_mode == DxfContourMode::StepOutline;
+                                                                toggle_row(
+                                                                    ui,
+                                                                    row_w,
+                                                                    "Kontur wyciągnięty ze STEPa na ROZKROJ",
+                                                                    "Gdy wyłączone (domyślnie): na ROZKROJ trafia prostokąt pod formatyzację, a wycięcia/ścięte rogi na FREZOWANIE.",
+                                                                    &mut step_contour,
+                                                                    def_step_contour,
+                                                                );
+                                                                cfg.dxf_contour_mode = if step_contour {
+                                                                    DxfContourMode::StepOutline
+                                                                } else {
+                                                                    DxfContourMode::RectFormat
+                                                                };
+
+                                                                toggle_row(
+                                                                    ui,
+                                                                    row_w,
+                                                                    "Ukryj strzałkę usłojenia",
+                                                                    "Gdy wyłączone, rysuje strzałkę orientacji wg Grain (L = oś X, W = oś Y).",
+                                                                    &mut cfg.dxf_hide_grain_arrow,
+                                                                    def.dxf_hide_grain_arrow,
+                                                                );
+                                                                toggle_row(
+                                                                    ui,
+                                                                    row_w,
+                                                                    "Rozdziel otwory wiercone i frezowane",
+                                                                    "Gdy wyłączone, wiercenia i frezowania trafiają razem na warstwę wspólną.",
+                                                                    &mut cfg.dxf_split_drill_and_mill,
+                                                                    def.dxf_split_drill_and_mill,
+                                                                );
+                                                                num_row(
+                                                                    ui,
+                                                                    bufs,
+                                                                    row_w,
+                                                                    "Granica średnicy wiercenia",
+                                                                    "Do tej średnicy otwory trafiają na WIERCENIE, powyżej na FREZOWANIE.",
+                                                                    "mm",
+                                                                    &mut cfg.dxf_drill_max_dia_mm,
+                                                                    def.dxf_drill_max_dia_mm,
+                                                                    5.0..=100.0,
+                                                                );
+                                                                toggle_row(
+                                                                    ui,
+                                                                    row_w,
+                                                                    "Osobne warstwy z głębokością (GW / GF)",
+                                                                    "Tworzy warstwy nieprzelotowe np. Wiercenie GW12, Frezowanie GF6.",
+                                                                    &mut cfg.dxf_depth_layers,
+                                                                    def.dxf_depth_layers,
+                                                                );
+                                                                toggle_row(
+                                                                    ui,
+                                                                    row_w,
+                                                                    "Wyciągaj otwory wiercone",
+                                                                    "Umieszcza okręgi otworów pionowych w pliku 2D DXF.",
+                                                                    &mut cfg.dxf_draw_drills,
+                                                                    def.dxf_draw_drills,
+                                                                );
+                                                                toggle_row(
+                                                                    ui,
+                                                                    row_w,
+                                                                    "Wyciągaj otwory w krawędziach",
+                                                                    "Rysuje otwory boczne i gniazda krawędziowe jako prostokąty przy konturze.",
+                                                                    &mut cfg.dxf_draw_side_holes,
+                                                                    def.dxf_draw_side_holes,
+                                                                );
+                                                                toggle_row(
+                                                                    ui,
+                                                                    row_w,
+                                                                    "Wyciągaj nuty i wycięcia frezowane",
+                                                                    "Umieszcza rowki (Groove), gniazda płaszczyznowe oraz duże otwory na FREZOWANIE.",
+                                                                    &mut cfg.dxf_draw_milling,
+                                                                    def.dxf_draw_milling,
+                                                                );
+                                                                toggle_row(
+                                                                    ui,
+                                                                    row_w,
+                                                                    "Uwzględniaj operacje od dołu (Face 6)",
+                                                                    "Eksportuje do DXF również otwory/operacje wykonywane na dolnej płaszczyźnie.",
+                                                                    &mut cfg.dxf_include_bottom_ops,
+                                                                    def.dxf_include_bottom_ops,
+                                                                );
+                                                                num_row(
+                                                                    ui,
+                                                                    bufs,
+                                                                    row_w,
+                                                                    "Skala strzałki (>= 300×200 mm)",
+                                                                    "Proporcja wysokości grotu strzałki do mniejszego boku dużej formatki.",
+                                                                    "",
+                                                                    &mut cfg.dxf_arrow_scale_large,
+                                                                    def.dxf_arrow_scale_large,
+                                                                    0.05..=0.95,
+                                                                );
+                                                                num_row(
+                                                                    ui,
+                                                                    bufs,
+                                                                    row_w,
+                                                                    "Skala strzałki (< 300×200 mm)",
+                                                                    "Proporcja wysokości grotu strzałki dla małych i wąskich elementów.",
+                                                                    "",
+                                                                    &mut cfg.dxf_arrow_scale_small,
+                                                                    def.dxf_arrow_scale_small,
+                                                                    0.05..=0.95,
+                                                                );
                                                                 path_like_text_row(
                                                                     ui,
                                                                     row_w,
-                                                                    "Podfolder wyjściowy (gdy ścieżka zapisu pusta)",
-                                                                    "Nazwa podfolderu tworzonego obok plików STEP (np. SCX_NANXING).",
-                                                                    &mut cfg.output_subfolder,
-                                                                    &def.output_subfolder,
+                                                                    "Warstwa rozkroju",
+                                                                    "Nazwa warstwy konturu zewnętrznego (kolor czerwony).",
+                                                                    &mut cfg.dxf_layer_rozkroj,
+                                                                    &def.dxf_layer_rozkroj,
+                                                                );
+                                                                path_like_text_row(
+                                                                    ui,
+                                                                    row_w,
+                                                                    "Warstwa wiercenia",
+                                                                    "Nazwa warstwy otworów wierconych <= 36 mm (kolor cyjan).",
+                                                                    &mut cfg.dxf_layer_wiercenie,
+                                                                    &def.dxf_layer_wiercenie,
+                                                                );
+                                                                path_like_text_row(
+                                                                    ui,
+                                                                    row_w,
+                                                                    "Warstwa frezowania",
+                                                                    "Nazwa warstwy frezowań, rowków i dużych otworów (kolor żółty).",
+                                                                    &mut cfg.dxf_layer_frezowanie,
+                                                                    &def.dxf_layer_frezowanie,
+                                                                );
+                                                                path_like_text_row(
+                                                                    ui,
+                                                                    row_w,
+                                                                    "Warstwa otworów w krawędziach",
+                                                                    "Nazwa warstwy wierceń bocznych Face 1..4 (kolor zielony).",
+                                                                    &mut cfg.dxf_layer_wiercenie_bok,
+                                                                    &def.dxf_layer_wiercenie_bok,
+                                                                );
+                                                                path_like_text_row(
+                                                                    ui,
+                                                                    row_w,
+                                                                    "Warstwa Lamello w krawędziach",
+                                                                    "Nazwa warstwy łukowatych gniazd Lamello P14 w bokach formatki (kolor pomarańczowy).",
+                                                                    &mut cfg.dxf_layer_lamello_bok,
+                                                                    &def.dxf_layer_lamello_bok,
+                                                                );
+                                                                path_like_text_row(
+                                                                    ui,
+                                                                    row_w,
+                                                                    "Warstwa Lamello w powierzchni",
+                                                                    "Nazwa warstwy gniazd Lamello P14 w kształcie kości w płaszczyźnie (kolor fioletowy).",
+                                                                    &mut cfg.dxf_layer_lamello_pow,
+                                                                    &def.dxf_layer_lamello_pow,
+                                                                );
+                                                                path_like_text_row(
+                                                                    ui,
+                                                                    row_w,
+                                                                    "Warstwa wspólna (gdy bez podziału)",
+                                                                    "Używana, gdy wyłączono rozdzielanie wierceń i frezowań.",
+                                                                    &mut cfg.dxf_layer_widmo,
+                                                                    &def.dxf_layer_widmo,
+                                                                );
+                                                                path_like_text_row(
+                                                                    ui,
+                                                                    row_w,
+                                                                    "Warstwa strzałki usłojenia",
+                                                                    "Nazwa warstwy strzałki orientacji (kolor magenta).",
+                                                                    &mut cfg.dxf_layer_strzalka,
+                                                                    &def.dxf_layer_strzalka,
                                                                 );
                                                             }
                                                             SettingsCategory::RulesDrilling => {
@@ -1172,6 +1340,27 @@ fn reset_category(cfg: &mut AppConfig, cat: SettingsCategory) {
             cfg.default_save_dir = d.default_save_dir;
             cfg.default_csv_dir = d.default_csv_dir;
             cfg.output_subfolder = d.output_subfolder;
+        }
+        SettingsCategory::DxfBsolid => {
+            cfg.dxf_contour_mode = d.dxf_contour_mode;
+            cfg.dxf_hide_grain_arrow = d.dxf_hide_grain_arrow;
+            cfg.dxf_split_drill_and_mill = d.dxf_split_drill_and_mill;
+            cfg.dxf_depth_layers = d.dxf_depth_layers;
+            cfg.dxf_draw_drills = d.dxf_draw_drills;
+            cfg.dxf_draw_side_holes = d.dxf_draw_side_holes;
+            cfg.dxf_draw_milling = d.dxf_draw_milling;
+            cfg.dxf_include_bottom_ops = d.dxf_include_bottom_ops;
+            cfg.dxf_drill_max_dia_mm = d.dxf_drill_max_dia_mm;
+            cfg.dxf_arrow_scale_large = d.dxf_arrow_scale_large;
+            cfg.dxf_arrow_scale_small = d.dxf_arrow_scale_small;
+            cfg.dxf_layer_rozkroj = d.dxf_layer_rozkroj;
+            cfg.dxf_layer_wiercenie = d.dxf_layer_wiercenie;
+            cfg.dxf_layer_frezowanie = d.dxf_layer_frezowanie;
+            cfg.dxf_layer_wiercenie_bok = d.dxf_layer_wiercenie_bok;
+            cfg.dxf_layer_lamello_bok = d.dxf_layer_lamello_bok;
+            cfg.dxf_layer_lamello_pow = d.dxf_layer_lamello_pow;
+            cfg.dxf_layer_widmo = d.dxf_layer_widmo;
+            cfg.dxf_layer_strzalka = d.dxf_layer_strzalka;
         }
         SettingsCategory::RulesDrilling => {
             cfg.compensate_drill_cone = d.compensate_drill_cone;

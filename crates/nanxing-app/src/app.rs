@@ -6,8 +6,13 @@ use nanxing_core::config::AppConfig;
 use nanxing_core::csv_edges::apply_csv_edges_from_file;
 use nanxing_core::model::{Operation, PanelProgram};
 use nanxing_core::scx_writer::render_scx_xml;
-use nanxing_core::transforms::format_transforms_chip;
-use nanxing_core::{LoadedStepPanel, format_num, load_step_panel, save_program_scx};
+use nanxing_core::transforms::{
+    PanelTransform, build_scx_passes, format_transforms_chip, has_dual_scx_passes,
+};
+use nanxing_core::{
+    LoadedStepPanel, format_num, load_step_panel, resolve_export_dirs, save_program_dxf,
+    save_program_scx_passes,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -19,7 +24,6 @@ pub enum BottomTab {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ActiveModal {
-    ExportAll,
     About,
 }
 
@@ -29,6 +33,7 @@ pub struct NanxingStudioApp {
     pub settings_dlg: SettingsDialogState,
     pub panels: Vec<LoadedStepPanel>,
     pub selected_idx: usize,
+    pub active_scx_pass: usize,
     pub selection: Option<Selection>,
     pub hover_edge_from_inspector: Option<u8>,
     pub search_query: String,
@@ -58,13 +63,14 @@ impl NanxingStudioApp {
             settings_dlg: SettingsDialogState::default(),
             panels: Vec::new(),
             selected_idx: 0,
+            active_scx_pass: 0,
             selection: None,
             hover_edge_from_inspector: None,
             search_query: String::new(),
             viewport: ViewportState::default(),
             bottom_tab: BottomTab::Operations,
             active_folder_path: start_path,
-            status_msg: "Gotowy — otwórz plik lub folder STEP, aby wygenerować .scx".to_string(),
+            status_msg: "Gotowy — otwórz plik lub folder STEP, aby wygenerować SCX i DXF".to_string(),
             status_highlight: false,
             active_modal: None,
         }
@@ -213,35 +219,18 @@ impl NanxingStudioApp {
         }
     }
 
-    fn output_dir_for_panel(&self, panel: &LoadedStepPanel) -> PathBuf {
+    /// Zwraca parę katalogów `(<baza>\SCX, <baza>\DXF)` (zawsze 3-literowe nazwy folderów bez dopisków).
+    fn export_dirs_for_panel(&self, panel: &LoadedStepPanel) -> (PathBuf, PathBuf) {
         if !self.cfg.default_save_dir.trim().is_empty() {
-            return PathBuf::from(self.cfg.default_save_dir.trim());
+            return resolve_export_dirs(Path::new(self.cfg.default_save_dir.trim()));
         }
-        let sub = if self.cfg.output_subfolder.trim().is_empty() {
-            "SCX_NANXING"
-        } else {
-            self.cfg.output_subfolder.trim()
-        };
         if let Some(src) = &panel.source_path {
             if let Some(parent) = src.parent() {
-                return parent.join(sub);
+                return resolve_export_dirs(parent);
             }
         }
-        std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join(sub)
-    }
-
-    fn preview_output_dir(&self) -> PathBuf {
-        if let Some(first) = self.panels.first() {
-            self.output_dir_for_panel(first)
-        } else if !self.cfg.default_save_dir.trim().is_empty() {
-            PathBuf::from(self.cfg.default_save_dir.trim())
-        } else {
-            std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join(&self.cfg.output_subfolder)
-        }
+        let cur = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        resolve_export_dirs(&cur)
     }
 
     fn export_current_scx(&mut self) {
@@ -253,51 +242,174 @@ impl NanxingStudioApp {
             self.set_status("Pominięto — formatka oznaczona jako pomijana");
             return;
         }
-        let out_dir = self.output_dir_for_panel(panel);
-        match save_program_scx(
-            &panel.program,
-            &panel.file_stem,
-            &out_dir,
-            self.cfg.skip_empty_panels,
-        ) {
-            Ok(Some(path)) => self.set_status(format!("Zapisano: {}", path.display())),
-            Ok(None) => self.set_status("Pominięto — formatka pusta (0 operacji)"),
+        let (scx_dir, _) = self.export_dirs_for_panel(panel);
+        let opts = self.cfg.to_convert_options();
+        match save_program_scx_passes(&panel.program, &panel.file_stem, &scx_dir, &opts) {
+            Ok(paths) if !paths.is_empty() => {
+                if paths.len() == 1 {
+                    self.set_status(format!("Zapisano SCX: {}", paths[0].display()));
+                } else {
+                    let names: Vec<String> = paths
+                        .iter()
+                        .filter_map(|p| p.file_name().and_then(|s| s.to_str()).map(String::from))
+                        .collect();
+                    self.set_status(format!(
+                        "Zapisano {} pliki SCX ({}) → {}",
+                        paths.len(),
+                        names.join(", "),
+                        scx_dir.display()
+                    ));
+                }
+            }
+            Ok(_) => self.set_status("Pominięto SCX — formatka pusta (0 operacji)"),
             Err(err) => self.set_status(format!("Błąd zapisu SCX: {err}")),
         }
     }
 
-    fn export_all_scx(&mut self) {
-        if self.panels.is_empty() {
-            self.set_status("Brak wczytanych formatek STEP");
+    fn export_current_dxf(&mut self) {
+        let Some(panel) = self.panels.get(self.selected_idx) else {
+            self.set_status("Brak wybranej formatki do zapisu");
+            return;
+        };
+        if panel.manual_skip {
+            self.set_status("Pominięto — formatka oznaczona jako pomijana");
             return;
         }
+        let (_, dxf_dir) = self.export_dirs_for_panel(panel);
+        let dxf_opts = self.cfg.to_dxf_options();
+        match save_program_dxf(&panel.program, &panel.file_stem, &dxf_dir, &dxf_opts) {
+            Ok(path) => self.set_status(format!("Zapisano DXF: {}", path.display())),
+            Err(err) => self.set_status(format!("Błąd zapisu DXF: {err}")),
+        }
+    }
+
+    /// Główny eksport automatyczny: zapisuje jednocześnie programy `.scx` (w tym `_STR2.scx` dla dwustronnych) do `SCX\`
+    /// oraz pojedynczy wspólny `.dxf` na formatkę do `DXF\`.
+    fn export_all_both(&mut self) {
+        if self.panels.is_empty() {
+            self.set_status("Najpierw wczytaj pliki STEP");
+            return;
+        }
+        let opts = self.cfg.to_convert_options();
+        let dxf_opts = self.cfg.to_dxf_options();
+        let mut scx_saved = 0usize;
+        let mut str2_cnt = 0usize;
+        let mut scx_skipped = 0usize;
+        let mut dxf_saved = 0usize;
+        let mut last_scx_dir = PathBuf::new();
+        let mut last_dxf_dir = PathBuf::new();
+
+        for panel in &self.panels {
+            let (scx_dir, dxf_dir) = self.export_dirs_for_panel(panel);
+            last_scx_dir = scx_dir.clone();
+            last_dxf_dir = dxf_dir.clone();
+            if panel.manual_skip {
+                scx_skipped += 1;
+                continue;
+            }
+            match save_program_scx_passes(&panel.program, &panel.file_stem, &scx_dir, &opts) {
+                Ok(paths) if !paths.is_empty() => {
+                    scx_saved += paths.len();
+                    if paths.len() > 1 {
+                        str2_cnt += paths.len() - 1;
+                    }
+                }
+                Ok(_) => scx_skipped += 1,
+                Err(err) => {
+                    self.set_status(format!("Błąd zapisu SCX ({}): {err}", panel.file_stem));
+                    return;
+                }
+            }
+            match save_program_dxf(&panel.program, &panel.file_stem, &dxf_dir, &dxf_opts) {
+                Ok(_) => dxf_saved += 1,
+                Err(err) => {
+                    self.set_status(format!("Błąd zapisu DXF ({}): {err}", panel.file_stem));
+                    return;
+                }
+            }
+        }
+        let str2_note = if str2_cnt > 0 {
+            format!(" (w tym {str2_cnt}×_STR2)")
+        } else {
+            String::new()
+        };
+        self.set_status(format!(
+            "Pełny eksport: {scx_saved} SCX{str2_note} → {} (pominięte: {scx_skipped}) · {dxf_saved} DXF → {}",
+            last_scx_dir.display(),
+            last_dxf_dir.display()
+        ));
+    }
+
+    fn export_all_scx(&mut self) {
+        if self.panels.is_empty() {
+            self.set_status("Najpierw wczytaj pliki STEP");
+            return;
+        }
+        let opts = self.cfg.to_convert_options();
+        let mut saved = 0usize;
+        let mut str2_cnt = 0usize;
+        let mut skipped = 0usize;
+        let mut last_dir = PathBuf::new();
+
+        for panel in &self.panels {
+            let (scx_dir, _) = self.export_dirs_for_panel(panel);
+            last_dir = scx_dir.clone();
+            if panel.manual_skip {
+                skipped += 1;
+                continue;
+            }
+            match save_program_scx_passes(&panel.program, &panel.file_stem, &scx_dir, &opts) {
+                Ok(paths) if !paths.is_empty() => {
+                    saved += paths.len();
+                    if paths.len() > 1 {
+                        str2_cnt += paths.len() - 1;
+                    }
+                }
+                Ok(_) => skipped += 1,
+                Err(err) => {
+                    self.set_status(format!("Błąd zapisu SCX ({}): {err}", panel.file_stem));
+                    return;
+                }
+            }
+        }
+        let str2_note = if str2_cnt > 0 {
+            format!(" (w tym {str2_cnt}×_STR2)")
+        } else {
+            String::new()
+        };
+        self.set_status(format!(
+            "Zapisano {saved} plików SCX{str2_note} → {} (pominięte: {skipped})",
+            last_dir.display()
+        ));
+    }
+
+    fn export_all_dxf(&mut self) {
+        if self.panels.is_empty() {
+            self.set_status("Najpierw wczytaj pliki STEP");
+            return;
+        }
+        let dxf_opts = self.cfg.to_dxf_options();
         let mut saved = 0usize;
         let mut skipped = 0usize;
         let mut last_dir = PathBuf::new();
 
         for panel in &self.panels {
-            let out_dir = self.output_dir_for_panel(panel);
-            last_dir = out_dir.clone();
+            let (_, dxf_dir) = self.export_dirs_for_panel(panel);
+            last_dir = dxf_dir.clone();
             if panel.manual_skip {
                 skipped += 1;
                 continue;
             }
-            match save_program_scx(
-                &panel.program,
-                &panel.file_stem,
-                &out_dir,
-                self.cfg.skip_empty_panels,
-            ) {
-                Ok(Some(_)) => saved += 1,
-                Ok(None) => skipped += 1,
+            match save_program_dxf(&panel.program, &panel.file_stem, &dxf_dir, &dxf_opts) {
+                Ok(_) => saved += 1,
                 Err(err) => {
-                    self.set_status(format!("Błąd zapisu {}: {err}", panel.file_stem));
+                    self.set_status(format!("Błąd zapisu DXF ({}): {err}", panel.file_stem));
                     return;
                 }
             }
         }
         self.set_status(format!(
-            "Zapisano {saved} plików SCX → {} (pominięte: {skipped})",
+            "Zapisano {saved} plików DXF → {} (pominięte ręcznie: {skipped})",
             last_dir.display()
         ));
     }
@@ -316,8 +428,8 @@ impl NanxingStudioApp {
                     self.open_step_folder_dialog();
                 } else if i.key_pressed(Key::L) {
                     self.open_csv_edges_dialog();
-                } else if i.key_pressed(Key::S) && !self.panels.is_empty() {
-                    self.active_modal = Some(ActiveModal::ExportAll);
+                } else if i.key_pressed(Key::S) {
+                    self.export_all_both();
                 } else if i.key_pressed(Key::Comma) {
                     self.settings_dlg
                         .open_with(&self.cfg, SettingsCategory::Paths);
@@ -338,10 +450,12 @@ impl NanxingStudioApp {
                     self.viewport.show_grid = !self.viewport.show_grid;
                 } else if i.key_pressed(Key::ArrowDown) && !self.panels.is_empty() {
                     self.selected_idx = (self.selected_idx + 1).min(self.panels.len() - 1);
+                    self.active_scx_pass = 0;
                     self.selection = None;
                     self.viewport.reset_camera();
                 } else if i.key_pressed(Key::ArrowUp) && self.selected_idx > 0 {
                     self.selected_idx -= 1;
+                    self.active_scx_pass = 0;
                     self.selection = None;
                     self.viewport.reset_camera();
                 }
@@ -407,13 +521,20 @@ impl NanxingStudioApp {
                             self.open_csv_edges_dialog();
                         }
                         ui.separator();
-                        if ui.button("Zapisz / Generuj wszystkie SCX   Ctrl+S").clicked() {
+                        if ui
+                            .button("Eksportuj wszystko (SCX + DXF)   Ctrl+S")
+                            .clicked()
+                        {
                             ui.close_menu();
-                            if self.panels.is_empty() {
-                                self.set_status("Brak wczytanych formatek STEP");
-                            } else {
-                                self.active_modal = Some(ActiveModal::ExportAll);
-                            }
+                            self.export_all_both();
+                        }
+                        if ui.button("Eksportuj tylko SCX (do SCX\\)").clicked() {
+                            ui.close_menu();
+                            self.export_all_scx();
+                        }
+                        if ui.button("Eksportuj tylko DXF (do DXF\\)").clicked() {
+                            ui.close_menu();
+                            self.export_all_dxf();
                         }
                         ui.separator();
                         if ui.button("Zamknij   Alt+F4").clicked() {
@@ -536,12 +657,28 @@ impl NanxingStudioApp {
 
                     ui.separator();
 
-                    if toolbar_btn(ui, "Zapisz / Generuj wszystkie SCX", true).clicked() {
-                        if self.panels.is_empty() {
-                            self.set_status("Najpierw wczytaj pliki STEP");
-                        } else {
-                            self.active_modal = Some(ActiveModal::ExportAll);
-                        }
+                    // Główny przycisk pełnego automatu (SCX -> SCX\, DXF -> DXF\)
+                    if toolbar_btn(ui, "Eksportuj SCX + DXF", true)
+                        .on_hover_text(
+                            "Pełny automat: zapisuje programy .scx do folderu SCX oraz rysunki 2D .dxf do folderu DXF (Ctrl+S)",
+                        )
+                        .clicked()
+                    {
+                        self.export_all_both();
+                    }
+
+                    // Dwa przyciski poboczne do pojedynczego formatu
+                    if toolbar_btn(ui, "Tylko SCX", false)
+                        .on_hover_text("Eksportuje wyłącznie programy .scx do folderu SCX")
+                        .clicked()
+                    {
+                        self.export_all_scx();
+                    }
+                    if toolbar_btn(ui, "Tylko DXF", false)
+                        .on_hover_text("Eksportuje wyłącznie rysunki 2D .dxf (bSolid / naklejki) do folderu DXF")
+                        .clicked()
+                    {
+                        self.export_all_dxf();
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -754,39 +891,33 @@ impl NanxingStudioApp {
                                                         .color(TX_3),
                                                 );
 
-                                                // Przycisk ręcznego pomijania formatki
+                                                // Przycisk ręcznego pomijania formatki (interakcja rejestrowana na wierzchu pod wierszem)
                                                 let btn_txt =
                                                     if man_skip { "Pomijana" } else { "Pomiń" };
-                                                let btn_w = if man_skip { 58.0_f32 } else { 44.0_f32 };
-                                                let (b_rect, b_resp) = ui.allocate_exact_size(
-                                                    Vec2::new(btn_w, 17.0_f32),
-                                                    egui::Sense::click(),
+                                                let btn_w = if man_skip { 60.0_f32 } else { 46.0_f32 };
+                                                let (b_rect, _) = ui.allocate_exact_size(
+                                                    Vec2::new(btn_w, 18.0_f32),
+                                                    egui::Sense::hover(),
                                                 );
                                                 skip_btn_rect = b_rect;
-                                                let b_resp = b_resp
-                                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                                    .on_hover_text(if man_skip {
-                                                        "Formatka pomijana — kliknij, aby włączyć ponownie"
-                                                    } else {
-                                                        "Kliknij, aby pominąć tę formatkę"
-                                                    });
+                                                let is_btn_hov = ui.rect_contains_pointer(b_rect);
                                                 let (bfill, bstroke, bfg) = if man_skip {
                                                     (
-                                                        Color32::from_rgb(42, 33, 18),
+                                                        Color32::from_rgb(52, 38, 16),
                                                         WARN,
                                                         WARN,
                                                     )
-                                                } else if b_resp.hovered() {
+                                                } else if is_btn_hov {
                                                     (
-                                                        Color32::from_rgb(32, 36, 40),
+                                                        Color32::from_rgb(38, 44, 50),
                                                         WARN,
-                                                        TX,
+                                                        Color32::WHITE,
                                                     )
                                                 } else {
                                                     (
-                                                        Color32::from_rgb(24, 24, 24),
-                                                        LINE_2,
-                                                        TX_3,
+                                                        Color32::from_rgb(28, 32, 36),
+                                                        Color32::from_rgb(76, 84, 92),
+                                                        TX_2,
                                                     )
                                                 };
                                                 ui.painter().rect_filled(b_rect, 0.0_f32, bfill);
@@ -803,9 +934,6 @@ impl NanxingStudioApp {
                                                     egui::FontId::proportional(10.0_f32),
                                                     bfg,
                                                 );
-                                                if b_resp.clicked() {
-                                                    toggle_skip_idx = Some(idx);
-                                                }
                                             },
                                         );
                                     });
@@ -916,6 +1044,13 @@ impl NanxingStudioApp {
                                                     COL_LAMELLO,
                                                 );
                                             }
+                                            if has_dual_scx_passes(prog) {
+                                                draw_flat_tag(
+                                                    ui,
+                                                    "2 programy (+_STR2)",
+                                                    WARN,
+                                                );
+                                            }
                                             if grooves > 0 {
                                                 draw_flat_tag(
                                                     ui,
@@ -957,12 +1092,28 @@ impl NanxingStudioApp {
                             );
 
                             let row_click = resp.interact(egui::Sense::click());
-                            if row_click.clicked() {
+                            let skip_click = ui
+                                .interact(
+                                    skip_btn_rect,
+                                    egui::Id::new(("left_skip_btn", idx)),
+                                    egui::Sense::click(),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .on_hover_text(if man_skip {
+                                    "Formatka pomijana — kliknij, aby włączyć ponownie"
+                                } else {
+                                    "Kliknij, aby pominąć tę formatkę"
+                                });
+
+                            if skip_click.clicked() {
+                                toggle_skip_idx = Some(idx);
+                            } else if row_click.clicked() {
                                 let ptr_on_skip = row_click
                                     .interact_pointer_pos()
                                     .is_some_and(|p| skip_btn_rect.expand(2.0).contains(p));
-                                if !ptr_on_skip && toggle_skip_idx != Some(idx) {
+                                if !ptr_on_skip {
                                     self.selected_idx = idx;
+                                    self.active_scx_pass = 0;
                                     self.selection = None;
                                     self.viewport.reset_camera();
                                 }
@@ -1012,7 +1163,13 @@ impl NanxingStudioApp {
 
                 // ── KARTA 1: GABARYTY FORMATKI ──
                 if let Some(loaded) = self.panels.get(self.selected_idx).cloned() {
-                    let prog = &loaded.program;
+                    let conv_opts = self.cfg.to_convert_options();
+                    let passes = build_scx_passes(&loaded.program, &conv_opts);
+                    let pass_idx = self.active_scx_pass.min(passes.len().saturating_sub(1));
+                    let active_pass = &passes[pass_idx];
+                    let prog = &active_pass.scx_program;
+                    let active_scx_filename =
+                        format!("{}{}.scx", loaded.file_stem, active_pass.file_suffix);
 
                     panel_header(ui, "GABARYTY FORMATKI", &format!("{}.step", loaded.file_stem));
                     Frame::NONE
@@ -1400,8 +1557,7 @@ impl NanxingStudioApp {
                                     ui.horizontal(|ui| {
                                         ui.label(
                                             RichText::new(format!(
-                                                "{}.scx · {lines_cnt} linii",
-                                                loaded.file_stem
+                                                "{active_scx_filename} · {lines_cnt} linii"
                                             ))
                                             .monospace()
                                             .size(10.5_f32)
@@ -1410,6 +1566,9 @@ impl NanxingStudioApp {
                                         ui.with_layout(
                                             egui::Layout::right_to_left(egui::Align::Center),
                                             |ui| {
+                                                if ui.small_button("Zapisz .dxf").clicked() {
+                                                    self.export_current_dxf();
+                                                }
                                                 if ui.small_button("Zapisz .scx").clicked() {
                                                     self.export_current_scx();
                                                 }
@@ -1561,17 +1720,187 @@ impl NanxingStudioApp {
                         });
                     });
 
+                // Zintegrowany dolny pasek nad legendą: kompaktowy przełącznik programów (Strona 1 / _STR2)
+                // oraz połączone pojedyncze ostrzeżenia i status strony (bez dublowania banerów na płótnie)
+                let conv_opts = self.cfg.to_convert_options();
+                if let Some(loaded_ref) = self.panels.get(self.selected_idx) {
+                    let passes_bar = build_scx_passes(&loaded_ref.program, &conv_opts);
+                    let cur_pass = if passes_bar.len() > 1 {
+                        self.active_scx_pass.min(passes_bar.len() - 1)
+                    } else {
+                        0
+                    };
+                    if passes_bar.len() <= 1 {
+                        self.active_scx_pass = 0;
+                    }
+                    let active_pass_ref = &passes_bar[cur_pass];
+                    let manual_flips = loaded_ref
+                        .user_transforms
+                        .iter()
+                        .filter(|&&xf| xf == PanelTransform::FlipUpsideDown)
+                        .count();
+                    let is_upside_down_side =
+                        (manual_flips % 2 == 1) ^ active_pass_ref.is_second_side_pass;
+                    let is_back_view = self.viewport.view_mode == ViewMode::BottomF6;
+
+                    let side_note: Option<(&str, Color32)> = match (is_upside_down_side, is_back_view) {
+                        (true, true) => Some((
+                            "👁⟲ Widok od spodu (po obrocie 180°)",
+                            Color32::from_rgb(104, 214, 196),
+                        )),
+                        (true, false) => Some((
+                            if active_pass_ref.is_second_side_pass {
+                                "⟲ Druga strona · obrót 180° (_STR2)"
+                            } else {
+                                "⟲ Odwrócona do góry nogami"
+                            },
+                            WARN,
+                        )),
+                        (false, true) => Some((
+                            "👁 Widok od spodu (Face 6)",
+                            Color32::from_rgb(164, 152, 236),
+                        )),
+                        (false, false) => None,
+                    };
+
+                    let warnings_ref = &active_pass_ref.scx_program.warnings;
+                    let show_bar =
+                        passes_bar.len() > 1 || side_note.is_some() || !warnings_ref.is_empty();
+
+                    if show_bar {
+                        let mut next_pass = cur_pass;
+                        egui::TopBottomPanel::bottom("viewport_bottom_info_bar")
+                            .frame(
+                                Frame::NONE
+                                    .fill(Color32::from_rgb(19, 20, 22))
+                                    .stroke(Stroke::new(1.0_f32, LINE))
+                                    .inner_margin(Margin::symmetric(12, 5)),
+                            )
+                            .show_inside(ui, |ui| {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.spacing_mut().item_spacing = Vec2::new(8.0, 4.0);
+
+                                    if passes_bar.len() > 1 {
+                                        for (p_i, p_item) in passes_bar.iter().enumerate() {
+                                            let active = cur_pass == p_i;
+                                            let short_lbl = if p_i == 0 {
+                                                format!(
+                                                    "Strona 1 ({})",
+                                                    p_item.scx_program.operations.len()
+                                                )
+                                            } else {
+                                                format!(
+                                                    "Strona 2 · _STR2 ({})",
+                                                    p_item.scx_program.operations.len()
+                                                )
+                                            };
+                                            let fill = if active {
+                                                if p_i == 0 {
+                                                    BG_PRI
+                                                } else {
+                                                    Color32::from_rgb(66, 44, 18)
+                                                }
+                                            } else {
+                                                Color32::from_rgb(26, 28, 30)
+                                            };
+                                            let border = if active {
+                                                if p_i == 0 {
+                                                    ACC_2
+                                                } else {
+                                                    WARN
+                                                }
+                                            } else {
+                                                LINE_2
+                                            };
+                                            let fg = if active { Color32::WHITE } else { TX_2 };
+                                            let resp = ui.add(
+                                                egui::Button::new(
+                                                    RichText::new(short_lbl)
+                                                        .monospace()
+                                                        .size(10.5_f32)
+                                                        .color(fg),
+                                                )
+                                                .fill(fill)
+                                                .stroke(Stroke::new(1.0_f32, border))
+                                                .corner_radius(CornerRadius::ZERO),
+                                            );
+                                            if resp
+                                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                                .on_hover_text(format!(
+                                                    "{}{}.scx",
+                                                    loaded_ref.file_stem, p_item.file_suffix
+                                                ))
+                                                .clicked()
+                                            {
+                                                next_pass = p_i;
+                                            }
+                                        }
+
+                                        if side_note.is_some() || !warnings_ref.is_empty() {
+                                            ui.separator();
+                                        }
+                                    }
+
+                                    if let Some((note_txt, note_col)) = side_note {
+                                        ui.label(
+                                            RichText::new(note_txt)
+                                                .monospace()
+                                                .size(10.5_f32)
+                                                .color(note_col),
+                                        );
+                                        if !warnings_ref.is_empty() {
+                                            ui.label(RichText::new("·").color(TX_3));
+                                        }
+                                    }
+
+                                    if !warnings_ref.is_empty() {
+                                        let combined = warnings_ref
+                                            .iter()
+                                            .map(|w| format!("▲ {w}"))
+                                            .collect::<Vec<_>>()
+                                            .join("   ·   ");
+                                        ui.label(
+                                            RichText::new(combined)
+                                                .monospace()
+                                                .size(10.5_f32)
+                                                .color(WARN),
+                                        );
+                                    }
+                                });
+                            });
+
+                        if next_pass != cur_pass {
+                            self.active_scx_pass = next_pass;
+                            self.selection = None;
+                        }
+                    }
+                }
+
                 // Płótno CAD albo delikatny napis na pustym tle (gdy nie wczytano jeszcze STEP)
                 let vp_action = if let Some(loaded) = self.panels.get(self.selected_idx) {
+                    let passes = build_scx_passes(&loaded.program, &conv_opts);
+                    let pass_idx = self.active_scx_pass.min(passes.len().saturating_sub(1));
+                    let active_pass = &passes[pass_idx];
+                    let manual_flips = loaded
+                        .user_transforms
+                        .iter()
+                        .filter(|&&xf| xf == PanelTransform::FlipUpsideDown)
+                        .count();
+                    let is_upside_down_side =
+                        (manual_flips % 2 == 1) ^ active_pass.is_second_side_pass;
+
                     draw_cad_viewport(
                         ui,
-                        &loaded.program,
+                        &active_pass.scx_program,
+                        &active_pass.ghost_operations,
                         &self.cfg,
                         &mut self.viewport,
                         &mut self.selection,
                         self.hover_edge_from_inspector,
                         !loaded.user_transforms.is_empty(),
                         loaded.manual_skip,
+                        is_upside_down_side,
+                        active_pass.is_second_side_pass,
                     )
                 } else {
                     Frame::NONE.fill(BG_CANVAS).show(ui, |ui| {
@@ -1623,131 +1952,6 @@ impl NanxingStudioApp {
         };
 
         match modal {
-            ActiveModal::ExportAll => {
-                let mut open = true;
-                let mut close_clicked = false;
-                let mut do_export = false;
-                let out_dir = self.preview_output_dir();
-                let exp_cnt = self.exportable_count();
-
-                egui::Window::new("Generuj wszystkie SCX")
-                    .collapsible(false)
-                    .resizable(false)
-                    .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
-                    .fixed_size([620.0, 380.0])
-                    .open(&mut open)
-                    .show(ctx, |ui| {
-                        Frame::NONE.inner_margin(Margin::same(12)).show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new("Katalog wyjściowy:").color(TX_3));
-                                ui.label(
-                                    RichText::new(out_dir.display().to_string())
-                                        .monospace()
-                                        .color(TX),
-                                );
-                            });
-                            ui.add_space(10.0_f32);
-
-                            ScrollArea::vertical().max_height(240.0_f32).show(ui, |ui| {
-                                egui::Grid::new("export_summary_grid")
-                                    .num_columns(4)
-                                    .spacing([14.0, 6.0])
-                                    .show(ui, |ui| {
-                                        ui.label(RichText::new("PLIK").small().color(TX_3));
-                                        ui.label(RichText::new("OP.").small().color(TX_3));
-                                        ui.label(RichText::new("LINII").small().color(TX_3));
-                                        ui.label(RichText::new("STATUS").small().color(TX_3));
-                                        ui.end_row();
-
-                                        for loaded in &self.panels {
-                                            let prog = &loaded.program;
-                                            let skip = self.is_panel_skipped(loaded);
-                                            let lines = if skip {
-                                                0
-                                            } else {
-                                                render_scx_xml(prog).lines().count()
-                                            };
-
-                                            ui.label(
-                                                RichText::new(format!("{}.scx", loaded.file_stem))
-                                                    .monospace()
-                                                    .size(11.0_f32),
-                                            );
-                                            ui.label(
-                                                RichText::new(if skip {
-                                                    "—".to_string()
-                                                } else {
-                                                    prog.operations.len().to_string()
-                                                })
-                                                .monospace(),
-                                            );
-                                            ui.label(
-                                                RichText::new(if skip {
-                                                    "—".to_string()
-                                                } else {
-                                                    lines.to_string()
-                                                })
-                                                .monospace(),
-                                            );
-
-                                            if loaded.manual_skip {
-                                                ui.label(RichText::new("pominięta").color(WARN));
-                                            } else if skip {
-                                                ui.label(
-                                                    RichText::new("pominięta (pusta)").color(TX_3),
-                                                );
-                                            } else if !prog.warnings.is_empty() {
-                                                ui.label(
-                                                    RichText::new(format!("▲ {}", prog.warnings[0]))
-                                                        .color(WARN),
-                                                );
-                                            } else {
-                                                ui.label(RichText::new("OK").color(OK));
-                                            }
-                                            ui.end_row();
-                                        }
-                                    });
-                            });
-
-                            ui.add_space(10.0_f32);
-                            ui.separator();
-                            ui.add_space(6.0_f32);
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    RichText::new(format!(
-                                        "Do zapisu: {exp_cnt} z {} plików.",
-                                        self.panels.len()
-                                    ))
-                                    .color(TX_3),
-                                );
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        if toolbar_btn(
-                                            ui,
-                                            &format!("Generuj {exp_cnt} plików"),
-                                            true,
-                                        )
-                                        .clicked()
-                                        {
-                                            do_export = true;
-                                        }
-                                        if ui.button("Anuluj").clicked() {
-                                            close_clicked = true;
-                                        }
-                                    },
-                                );
-                            });
-                        });
-                    });
-
-                if do_export {
-                    self.export_all_scx();
-                    self.active_modal = None;
-                } else if !open || close_clicked {
-                    self.active_modal = None;
-                }
-            }
             ActiveModal::About => {
                 let mut open = true;
                 let mut close_clicked = false;

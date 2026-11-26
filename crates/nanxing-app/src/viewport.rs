@@ -86,12 +86,15 @@ impl ViewportState {
 pub fn draw_cad_viewport(
     ui: &mut egui::Ui,
     panel: &PanelProgram,
+    ghost_ops: &[Operation],
     cfg: &AppConfig,
     vp: &mut ViewportState,
     selection: &mut Option<Selection>,
     external_hover_edge: Option<u8>,
     has_user_transforms: bool,
     manual_skip: bool,
+    is_upside_down_side: bool,
+    is_second_pass: bool,
 ) -> ViewportAction {
     let available = ui.available_rect_before_wrap();
     let (response, painter) = ui.allocate_painter(available.size(), Sense::click_and_drag());
@@ -156,13 +159,29 @@ pub fn draw_cad_viewport(
         Pos2::new(ox_right, oy_bottom),
     );
 
-    // 2. Realny kontur <Outline> formatki (albo prostokąt L×W)
-    let board_fill = match vp.view_mode {
-        ViewMode::XRay => Color32::from_rgb(22, 25, 28),
-        ViewMode::TopF5 => Color32::from_rgb(23, 26, 29),
-        ViewMode::BottomF6 => Color32::from_rgb(26, 24, 22),
+    // 2. Realny kontur <Outline> formatki (albo prostokąt L×W) — subtelne, czytelne rozróżnienie stron bez przysłaniania otworów
+    let is_back_view = vp.view_mode == ViewMode::BottomF6;
+    let (board_fill, board_stroke) = match (is_upside_down_side, is_back_view) {
+        (false, false) => (
+            Color32::from_rgb(22, 25, 28),
+            Stroke::new(1.1_f32, Color32::from_rgb(64, 72, 80)),
+        ),
+        (true, false) => (
+            // Odwrócona formatka do góry nogami (lub Program 2 _STR2): stonowany ciepły brąz + delikatna bursztynowa ramka
+            Color32::from_rgb(30, 24, 19),
+            Stroke::new(1.5_f32, Color32::from_rgb(178, 122, 52)),
+        ),
+        (false, true) => (
+            // Widok od tyłu / spodu (klawisz 3) dla strony głównej: stonowany ciemny granat-indygo
+            Color32::from_rgb(21, 22, 34),
+            Stroke::new(1.5_f32, Color32::from_rgb(114, 108, 196)),
+        ),
+        (true, true) => (
+            // Widok od tyłu na formatce obróconej do góry nogami: stonowany ciemny morski
+            Color32::from_rgb(18, 29, 30),
+            Stroke::new(1.5_f32, Color32::from_rgb(62, 164, 148)),
+        ),
     };
-    let board_stroke = Stroke::new(1.0_f32, Color32::from_rgb(61, 68, 74));
 
     if panel.outline.len() >= 3 {
         let pts: Vec<Pos2> = panel.outline.iter().map(|p| Pos2::new(sx(p.x), sy(p.y))).collect();
@@ -175,7 +194,40 @@ pub fn draw_cad_viewport(
         painter.rect_stroke(board_rect, 0.0_f32, board_stroke, StrokeKind::Outside);
     }
 
-    if panel.operations.is_empty() {
+    // Subtelny deseń odróżniający stronę odwróconą (+45°) oraz podgląd od tyłu (-45°) — niska intensywność, nie przysłania otworów
+    let clipped_board = painter.with_clip_rect(board_rect.intersect(rect));
+    if is_upside_down_side {
+        let hatch_col = if is_back_view {
+            Color32::from_rgba_unmultiplied(68, 192, 172, 10)
+        } else {
+            Color32::from_rgba_unmultiplied(214, 146, 56, 11)
+        };
+        draw_diagonal_hatch(&clipped_board, board_rect, 26.0, hatch_col);
+    }
+    if is_back_view {
+        let rev_col = if is_upside_down_side {
+            Color32::from_rgba_unmultiplied(214, 152, 62, 10)
+        } else {
+            Color32::from_rgba_unmultiplied(136, 128, 222, 12)
+        };
+        draw_reverse_diagonal_hatch(&clipped_board, board_rect, 26.0, rev_col);
+    }
+    if is_upside_down_side || is_back_view {
+        let inner_r = board_rect.shrink(4.0);
+        if inner_r.width() > 16.0 && inner_r.height() > 16.0 {
+            let bc = board_stroke.color;
+            let dash_col = Color32::from_rgba_unmultiplied(bc.r(), bc.g(), bc.b(), 52);
+            let corners = [
+                inner_r.left_top(),
+                inner_r.right_top(),
+                inner_r.right_bottom(),
+                inner_r.left_bottom(),
+            ];
+            draw_dashed_closed_poly(&painter, &corners, 7.0, 6.0, Stroke::new(1.0_f32, dash_col));
+        }
+    }
+
+    if panel.operations.is_empty() && ghost_ops.is_empty() {
         draw_diagonal_hatch(&painter, board_rect, 12.0, Color32::from_rgb(44, 49, 53));
         let txt = if cfg.skip_empty_panels {
             "FORMATKA PUSTA — POMINIĘTA PRZY EKSPORCIE"
@@ -277,6 +329,17 @@ pub fn draw_cad_viewport(
 
     // 4. Wymiary X / Y
     draw_dimensions(&painter, panel, board_rect);
+
+    // 4b. Półprzezroczyste duchy operacji z drugiej strony / drugiego programu (widoczne w X-Ray oraz w podglądzie Dół F6)
+    if vp.view_mode != ViewMode::TopF5 {
+        for gop in ghost_ops {
+            let gkind = LayerKind::of_op(gop);
+            if !vp.is_layer_visible(gkind) {
+                continue;
+            }
+            draw_ghost_operation(&painter, gop, panel, scale, &sx, &sy);
+        }
+    }
 
     // 5. Wykryte operacje B-Rep (wiercenia, Lamello P14, nuty)
     vp.hovered_op = None;
@@ -449,29 +512,42 @@ pub fn draw_cad_viewport(
                     ));
                     screen_bounds(&screen_pts).expand(4.0)
                 } else {
-                    // Gniazdo w powierzchni — kształt „kości” osadzony idealnie na środku (x, y), kolor #c79be6
+                    // Gniazdo w powierzchni — kształt „kości” osadzony idealnie na środku (x, y)
                     let axis_along_u = *direction == 'X';
-                    let fill_col = Color32::from_rgba_unmultiplied(
-                        COL_LAMELLO_FACE.r(),
-                        COL_LAMELLO_FACE.g(),
-                        COL_LAMELLO_FACE.b(),
-                        if is_ghost { 30 } else { 51 },
-                    );
-                    // Wypełnienie z 3 wypukłych części (środek + lewy koniec + prawy koniec) bez artefaktów wklęsłości
+                    let fill_col = if is_ghost {
+                        Color32::from_rgba_unmultiplied(122, 118, 206, 8)
+                    } else {
+                        Color32::from_rgba_unmultiplied(
+                            COL_LAMELLO_FACE.r(),
+                            COL_LAMELLO_FACE.g(),
+                            COL_LAMELLO_FACE.b(),
+                            52,
+                        )
+                    };
                     for part in face_socket_convex_parts(&p14, *x, *y, axis_along_u) {
                         let pts: Vec<Pos2> =
                             part.iter().map(|q| Pos2::new(sx(q[0]), sy(q[1]))).collect();
                         painter.add(Shape::convex_polygon(pts, fill_col, Stroke::NONE));
                     }
-                    // Dokładny 34-punktowy obrys z lamello_p14::face_socket
                     let outline_pts: Vec<Pos2> = lamello_p14::face_socket(&p14, *x, *y, axis_along_u)
                         .iter()
                         .map(|q| Pos2::new(sx(q[0]), sy(q[1])))
                         .collect();
-                    painter.add(Shape::closed_line(
-                        outline_pts.clone(),
-                        Stroke::new(stroke_w, COL_LAMELLO_FACE),
-                    ));
+                    if is_ghost {
+                        let ghost_stroke = Color32::from_rgba_unmultiplied(126, 122, 210, 48);
+                        draw_dashed_closed_poly(
+                            &painter,
+                            &outline_pts,
+                            4.5,
+                            4.5,
+                            Stroke::new(0.95_f32, ghost_stroke),
+                        );
+                    } else {
+                        painter.add(Shape::closed_line(
+                            outline_pts.clone(),
+                            Stroke::new(stroke_w, COL_LAMELLO_FACE),
+                        ));
+                    }
                     screen_bounds(&outline_pts).expand(4.0)
                 }
             }
@@ -636,6 +712,7 @@ pub fn draw_cad_viewport(
         FontId::monospace(10.5_f32),
         TX_2,
     );
+    let _ = is_second_pass;
     if manual_skip {
         painter.text(
             ovl_pos + Vec2::new(0.0, 32.0),
@@ -644,21 +721,6 @@ pub fn draw_cad_viewport(
             FontId::monospace(10.5_f32),
             WARN,
         );
-    }
-
-    // 10. Nakładka prawa górna (ostrzeżenia odsunięte na lewo od pionowego paska ikon obracania)
-    let mut chip_y = rect.top() + CTRL_MARGIN;
-    let chip_right_x = orient_bar_rect.left() - 10.0_f32;
-    for w in &panel.warnings {
-        draw_warning_chip(
-            &painter,
-            Pos2::new(chip_right_x, chip_y),
-            &format!("▲ {w}"),
-            WARN,
-            Color32::from_rgb(28, 24, 16),
-            Color32::from_rgb(107, 84, 38),
-        );
-        chip_y += 24.0;
     }
 
     // 11a. Pływające przyciski obracania i odbijania w prawym górnym rogu wzdłuż prawej krawędzi
@@ -1139,6 +1201,200 @@ fn draw_diagonal_hatch(painter: &egui::Painter, rect: Rect, step: f32, col: Colo
     }
 }
 
+fn draw_reverse_diagonal_hatch(painter: &egui::Painter, rect: Rect, step: f32, col: Color32) {
+    let stroke = Stroke::new(1.0_f32, col);
+    let mut d = 0.0_f32;
+    let max_d = rect.width() + rect.height();
+    while d < max_d {
+        let x1 = (rect.left() + d).min(rect.right());
+        let y1 = rect.top() + (d - (x1 - rect.left()));
+        let y2 = rect.bottom().min(rect.top() + d);
+        let x2 = rect.left() + (d - (y2 - rect.top()));
+        if x2 <= rect.right() && y1 <= rect.bottom() && x1 >= rect.left() && y2 >= rect.top() {
+            painter.line_segment([Pos2::new(x1, y1), Pos2::new(x2, y2)], stroke);
+        }
+        d += step;
+    }
+}
+
+fn draw_dashed_segment(
+    painter: &egui::Painter,
+    a: Pos2,
+    b: Pos2,
+    dash_len: f32,
+    gap_len: f32,
+    stroke: Stroke,
+) {
+    let d = b - a;
+    let total = d.length();
+    if total < 0.5 {
+        return;
+    }
+    let dir = d / total;
+    let step = (dash_len + gap_len).max(2.0);
+    let mut t = 0.0_f32;
+    while t < total {
+        let t_end = (t + dash_len).min(total);
+        painter.line_segment([a + dir * t, a + dir * t_end], stroke);
+        t += step;
+    }
+}
+
+fn draw_dashed_closed_poly(
+    painter: &egui::Painter,
+    pts: &[Pos2],
+    dash_len: f32,
+    gap_len: f32,
+    stroke: Stroke,
+) {
+    let n = pts.len();
+    if n < 2 {
+        return;
+    }
+    for i in 0..n {
+        draw_dashed_segment(painter, pts[i], pts[(i + 1) % n], dash_len, gap_len, stroke);
+    }
+}
+
+/// Rysuje półprzezroczysty „duch” operacji znajdującej się po drugiej stronie formatki
+/// (np. dolne gniazda Lamello w widoku strony głównej albo operacje 1. programu w podglądzie `_STR2`).
+fn draw_ghost_operation(
+    painter: &egui::Painter,
+    op: &Operation,
+    panel: &PanelProgram,
+    scale: f32,
+    sx: &dyn Fn(f64) -> f32,
+    sy: &dyn Fn(f64) -> f32,
+) {
+    match op {
+        Operation::LamelloP14 {
+            face,
+            direction,
+            x,
+            y,
+            max_depth,
+            ..
+        } => {
+            let mut p14 = P14::default();
+            if (1..=4).contains(face) {
+                p14.edge_depth = *max_depth;
+                let (edge, s0) = match face {
+                    1 => (Edge::F3, *x),
+                    2 => (Edge::F1, *x),
+                    3 => (Edge::F2, *y),
+                    _ => (Edge::F4, *y),
+                };
+                let raw_pts = lamello_p14::edge_slot(&p14, edge, panel.length, panel.width, s0, 20);
+                let screen_pts: Vec<Pos2> =
+                    raw_pts.iter().map(|q| Pos2::new(sx(q[0]), sy(q[1]))).collect();
+                let fill_col = Color32::from_rgba_unmultiplied(118, 114, 198, 7);
+                let stroke_col = Color32::from_rgba_unmultiplied(124, 120, 206, 44);
+                painter.add(Shape::convex_polygon(
+                    screen_pts.clone(),
+                    fill_col,
+                    Stroke::NONE,
+                ));
+                draw_dashed_closed_poly(
+                    painter,
+                    &screen_pts,
+                    4.5,
+                    4.5,
+                    Stroke::new(0.95_f32, stroke_col),
+                );
+            } else {
+                let axis_along_u = *direction == 'X';
+                let fill_col = Color32::from_rgba_unmultiplied(122, 118, 206, 7);
+                let stroke_col = Color32::from_rgba_unmultiplied(126, 122, 210, 46);
+                for part in face_socket_convex_parts(&p14, *x, *y, axis_along_u) {
+                    let pts: Vec<Pos2> =
+                        part.iter().map(|q| Pos2::new(sx(q[0]), sy(q[1]))).collect();
+                    painter.add(Shape::convex_polygon(pts, fill_col, Stroke::NONE));
+                }
+                let outline_pts: Vec<Pos2> = lamello_p14::face_socket(&p14, *x, *y, axis_along_u)
+                    .iter()
+                    .map(|q| Pos2::new(sx(q[0]), sy(q[1])))
+                    .collect();
+                draw_dashed_closed_poly(
+                    painter,
+                    &outline_pts,
+                    4.5,
+                    4.5,
+                    Stroke::new(0.95_f32, stroke_col),
+                );
+            }
+        }
+        Operation::VerticalDrill {
+            x, y, diameter, ..
+        } => {
+            let c = Pos2::new(sx(*x), sy(*y));
+            let r = (((*diameter as f32) * 0.5) * scale).max(1.8_f32);
+            let col = Color32::from_rgba_unmultiplied(
+                COL_VDRILL.r(),
+                COL_VDRILL.g(),
+                COL_VDRILL.b(),
+                70,
+            );
+            painter.circle_stroke(c, r, Stroke::new(1.0_f32, col));
+        }
+        Operation::HorizontalDrill {
+            face,
+            x,
+            y,
+            diameter,
+            depth,
+            ..
+        } => {
+            let p1 = Pos2::new(sx(*x), sy(*y));
+            let p2 = match face {
+                4 => Pos2::new(sx(*x + depth), sy(*y)),
+                3 => Pos2::new(sx(*x - depth), sy(*y)),
+                2 => Pos2::new(sx(*x), sy(*y + depth)),
+                1 => Pos2::new(sx(*x), sy(*y - depth)),
+                _ => p1,
+            };
+            let half_w = ((*diameter as f32) * 0.5 * scale).max(1.4_f32);
+            let r = if (p1.y - p2.y).abs() < 0.5 {
+                Rect::from_min_max(
+                    Pos2::new(p1.x.min(p2.x), p1.y - half_w),
+                    Pos2::new(p1.x.max(p2.x), p1.y + half_w),
+                )
+            } else {
+                Rect::from_min_max(
+                    Pos2::new(p1.x - half_w, p1.y.min(p2.y)),
+                    Pos2::new(p1.x + half_w, p1.y.max(p2.y)),
+                )
+            };
+            let stroke_col = Color32::from_rgba_unmultiplied(
+                COL_SDRILL.r(),
+                COL_SDRILL.g(),
+                COL_SDRILL.b(),
+                75,
+            );
+            let pts = [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom()];
+            draw_dashed_closed_poly(painter, &pts, 4.0, 3.0, Stroke::new(1.0_f32, stroke_col));
+        }
+        Operation::Groove {
+            x,
+            y,
+            end_x,
+            end_y,
+            width,
+            ..
+        } => {
+            let p1 = Pos2::new(sx(*x), sy(*y));
+            let p2 = Pos2::new(sx(*end_x), sy(*end_y));
+            let gw = ((*width as f32) * scale).max(3.0);
+            let col = Color32::from_rgba_unmultiplied(
+                COL_GROOVE.r(),
+                COL_GROOVE.g(),
+                COL_GROOVE.b(),
+                45,
+            );
+            painter.line_segment([p1, p2], Stroke::new(gw, col));
+        }
+    }
+}
+
 fn draw_dimensions(painter: &egui::Painter, panel: &PanelProgram, board_rect: Rect) {
     let dim_stroke = Stroke::new(1.0_f32, Color32::from_rgb(58, 64, 70));
     let ox = board_rect.left();
@@ -1231,22 +1487,6 @@ fn draw_origin_gizmo(painter: &egui::Painter, origin: Pos2) {
         FontId::monospace(10.5_f32),
         ACC_2,
     );
-}
-
-fn draw_warning_chip(
-    painter: &egui::Painter,
-    right_top: Pos2,
-    text: &str,
-    tx_col: Color32,
-    bg_col: Color32,
-    border_col: Color32,
-) {
-    let galley = painter.layout_no_wrap(text.to_string(), FontId::monospace(10.5_f32), tx_col);
-    let size = galley.size() + Vec2::new(16.0, 6.0);
-    let rect = Rect::from_min_size(Pos2::new(right_top.x - size.x, right_top.y), size);
-    painter.rect_filled(rect, 0.0_f32, bg_col);
-    painter.rect_stroke(rect, 0.0_f32, Stroke::new(1.0_f32, border_col), StrokeKind::Inside);
-    painter.galley(rect.left_top() + Vec2::new(8.0, 3.0), galley, tx_col);
 }
 
 fn draw_tooltip(painter: &egui::Painter, pos: Pos2, text: &str) {
